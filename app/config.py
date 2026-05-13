@@ -23,3 +23,6 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "healthcare-rag-docs")
 KMS_KEY_ID = os.getenv("KMS_KEY_ID", "")
+
+USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE", "true").lower() == "true"
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")
