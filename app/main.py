@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -12,7 +13,18 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Healthcare Semantic Search")
 
+# session_middleware registered first so it becomes inner in the stack
 app.middleware("http")(session_middleware)
+
+# CORSMiddleware registered second — add_middleware inserts at index 0,
+# making it outermost so it processes OPTIONS preflight before auth runs.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_db():
