@@ -10,6 +10,9 @@ class IngestResponse(BaseModel):
     indexed_count: int
     storage_uri: str
     phi_span_count: int
+    quality_score: float = 1.0
+    needs_review: bool = False
+    normalization_applied: bool = False
 
 
 class ChunkMeta(BaseModel):

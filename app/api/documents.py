@@ -14,13 +14,16 @@ load_dotenv(Path(__file__).parent.parent.parent / "config" / ".env")
 
 from app.auth.models import DocumentHash
 from app.database import SessionLocal
-from app.ingestion.classifier import DocumentClassifier
+from app.ingestion.classifier import DocumentClassifier, DocType
 from app.ingestion.ocr_worker import OCRWorker
 from app.ingestion.text_cleaner import TextCleaner
-from app.ingestion.chunker import AdaptiveChunker
+from app.ingestion.chunker import AdaptiveChunker, ChunkDocType
 from app.ingestion.phi_tagger import PhiTagger
 from app.ingestion.embedder import Embedder
 from app.ingestion.indexer import Indexer
+from app.ingestion.extraction_validator import ExtractionValidator
+from app.ingestion.layout_extractor import LayoutExtractor
+from app.ingestion.normalizer import MedicalDocumentNormalizer
 from app.storage import get_storage_service
 from app.schemas.document import IngestResponse
 
@@ -28,7 +31,7 @@ router = APIRouter()
 
 # Debug output root — created once at import time; dev-only, never committed
 _DEBUG_ROOT = Path(__file__).parent.parent.parent / "debug_outputs"
-for _sub in ("ocr", "chunks", "phi", "cleaned"):
+for _sub in ("ocr", "chunks", "phi", "cleaned", "normalized"):
     (_DEBUG_ROOT / _sub).mkdir(parents=True, exist_ok=True)
 
 _ocr = None
@@ -82,8 +85,13 @@ def _resolve_acl(request: Request) -> list:
 @router.post("/api/ingest", response_model=IngestResponse)
 async def ingest_document(request: Request, file: UploadFile = File(...)):
     """
-    Synchronous ingestion pipeline:
-    upload -> storage -> classify -> OCR/extract -> clean -> chunk -> PHI tag -> embed -> index
+    Ingestion pipeline:
+    upload → classify → OCR/extract → clean
+    → validate raw extraction
+    → layout/table extraction (typed PDFs only)
+    → normalize to Markdown (prescription/form, or when tables found)
+    → validate normalized text; keep whichever scores higher
+    → chunk → PHI tag → embed → index
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
@@ -100,7 +108,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                 status_code=409,
                 detail={
                     "error": "duplicate_document",
-                    "message": f"This file has already been ingested.",
+                    "message": "This file has already been ingested.",
                     "existing_doc_id": existing.doc_id,
                     "filename": existing.filename,
                     "ingested_at": existing.ingested_at.isoformat(),
@@ -124,13 +132,14 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         else:
             process_path = tmp_path
 
+        # --- Classify (physical format: typed/scanned/handwritten) ----------
         doc_type, _meta = DocumentClassifier.classify(process_path)
 
+        # --- OCR / text extraction ------------------------------------------
         ocr_result = _get_ocr().extract_text(process_path, doc_type)
         raw_text = ocr_result["text"]
-        ocr_lines = ocr_result.get("lines")  # only present for handwritten
+        ocr_lines = ocr_result.get("lines")
         if ocr_lines:
-            # Write per-line confidence so low-quality lines are immediately visible
             ocr_debug = "\n".join(
                 f"[conf={l['confidence']:.2f}] {l['text']}" for l in ocr_lines
             )
@@ -139,13 +148,62 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             ocr_debug = raw_text
         (_DEBUG_ROOT / "ocr" / f"{doc_id}.txt").write_text(ocr_debug, encoding="utf-8")
 
+        # --- Clean -------------------------------------------------------------
         clean_text = TextCleaner.clean(raw_text)
         (_DEBUG_ROOT / "cleaned" / f"{doc_id}.txt").write_text(clean_text, encoding="utf-8")
 
-        chunks = AdaptiveChunker.chunk(clean_text)
+        # --- Detect content type (prescription / lab / form / clinical note) --
+        detected_chunk_type = AdaptiveChunker.detect_doc_type(clean_text)
+        chunk_type_str = detected_chunk_type.value
 
+        # --- Validate raw extraction ------------------------------------------
+        raw_validation = ExtractionValidator.validate(clean_text, chunk_type_str)
+
+        # --- Layout / table extraction (typed PDFs only) ---------------------
+        should_normalize = detected_chunk_type in (
+            ChunkDocType.PRESCRIPTION, ChunkDocType.FORM
+        )
+        tables: list = []
+        if doc_type == DocType.TYPED:
+            tables = LayoutExtractor.extract_tables(process_path)
+            if tables:
+                should_normalize = True  # pdfplumber found tables → always normalize
+
+        # --- Normalization ---------------------------------------------------
+        norm_result: dict = {
+            "normalized_text": clean_text,
+            "normalized_format": "plain",
+            "structured_fields": {},
+            "normalization_applied": False,
+        }
+        normalization_applied = False
+
+        if should_normalize:
+            candidate = MedicalDocumentNormalizer.normalize(
+                clean_text, chunk_type_str, tables
+            )
+            if candidate["normalization_applied"]:
+                norm_text = candidate["normalized_text"]
+                norm_validation = ExtractionValidator.validate(norm_text, chunk_type_str)
+
+                # Keep normalized if quality is at least as good as raw
+                if norm_validation["quality_score"] >= raw_validation["quality_score"]:
+                    norm_result = candidate
+                    normalization_applied = True
+                else:
+                    # Store norm result for debugging but index raw text
+                    norm_result = candidate
+                    normalization_applied = False
+
+        final_text = norm_result["normalized_text"] if normalization_applied else clean_text
+
+        (_DEBUG_ROOT / "normalized" / f"{doc_id}.txt").write_text(
+            norm_result["normalized_text"], encoding="utf-8"
+        )
+
+        # --- PHI tagging (on final text) -------------------------------------
         phi_tagger = _get_phi()
-        all_phi_spans = phi_tagger.tag(clean_text)
+        all_phi_spans = phi_tagger.tag(final_text)
         phi_span_count = len(all_phi_spans)
         phi_spans_json = json.dumps([s.to_dict() for s in all_phi_spans])
         (_DEBUG_ROOT / "phi" / f"{doc_id}.json").write_text(
@@ -153,18 +211,36 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             encoding="utf-8",
         )
 
+        # --- Chunk final text -------------------------------------------------
+        chunks = AdaptiveChunker.chunk(final_text, detected_chunk_type)
+
+        # --- Embed ------------------------------------------------------------
         embedder = _get_embedder()
         child_texts = [c.child_text for c in chunks]
         embeddings = embedder.embed_batch(child_texts)
 
+        # --- Build index documents -------------------------------------------
         acl = _resolve_acl(request)
+        structured_fields_json = json.dumps(
+            norm_result.get("structured_fields", {}), ensure_ascii=False
+        )
+        extraction_issues_json = json.dumps(raw_validation["issues"])
+
         index_docs = [
             {
-                # Deterministic chunk ID: same file always produces the same IDs,
-                # so re-indexing overwrites rather than duplicates in OpenSearch.
+                # Deterministic chunk ID: same file → same IDs → overwrites not duplicates
                 "chunk_id": hashlib.sha256(f"{file_hash}:{i}".encode()).hexdigest()[:32],
                 "doc_id": doc_id,
+                # text is always what gets searched — normalised Markdown when applied
                 "text": chunk.child_text,
+                "raw_text": clean_text,
+                "normalized_text": norm_result["normalized_text"],
+                "normalized_format": norm_result.get("normalized_format", "plain"),
+                "extraction_quality_score": raw_validation["quality_score"],
+                "extraction_issues": extraction_issues_json,
+                "needs_review": raw_validation["needs_review"],
+                "normalization_applied": normalization_applied,
+                "structured_fields": structured_fields_json,
                 "embedding": embedding,
                 "doc_type": str(doc_type.value),
                 "phi_spans": phi_spans_json,
@@ -172,6 +248,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             }
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
         ]
+
         (_DEBUG_ROOT / "chunks" / f"{doc_id}.json").write_text(
             json.dumps(
                 [
@@ -180,6 +257,9 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                         "child_text": doc["text"],
                         "parent_text": chunks[i].parent_text,
                         "doc_type": doc["doc_type"],
+                        "normalization_applied": doc["normalization_applied"],
+                        "extraction_quality_score": doc["extraction_quality_score"],
+                        "needs_review": doc["needs_review"],
                     }
                     for i, doc in enumerate(index_docs)
                 ],
@@ -191,7 +271,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
 
         indexed_count = _get_indexer().index_chunks(index_docs)
 
-        # Layer 1: record fingerprint so re-upload of same file is rejected
+        # --- Record fingerprint (only after successful indexing) -------------
         db = SessionLocal()
         try:
             db.add(DocumentHash(
@@ -215,4 +295,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         indexed_count=indexed_count,
         storage_uri=storage_uri,
         phi_span_count=phi_span_count,
+        quality_score=raw_validation["quality_score"],
+        needs_review=raw_validation["needs_review"],
+        normalization_applied=normalization_applied,
     )
