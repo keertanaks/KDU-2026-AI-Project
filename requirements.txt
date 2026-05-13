@@ -14,10 +14,13 @@ scipy
 scikit-learn
 sentence-transformers
 pillow
-opencv-python
+opencv-python-headless
 pytesseract
-paddleocr
+paddleocr==2.9.1
+paddlepaddle==2.6.2
 pymupdf
+langchain-text-splitters
+onnxruntime
 presidio-analyzer
 presidio-anonymizer
 openai

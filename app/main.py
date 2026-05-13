@@ -8,10 +8,12 @@ from app.database import SessionLocal, engine
 from app.auth.models import Base, User, UserRole
 from app.auth.service import AuthService
 from app.auth.middleware import session_middleware
+from app.api.documents import router as documents_router
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Healthcare Semantic Search")
+app.include_router(documents_router)
 
 # session_middleware registered first so it becomes inner in the stack
 app.middleware("http")(session_middleware)
