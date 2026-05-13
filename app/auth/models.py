@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, LargeBinary
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Enum, LargeBinary, Text
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import enum
@@ -34,6 +34,15 @@ class Session(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
     is_valid = Column(Boolean, default=True)
+
+
+class DocumentHash(Base):
+    __tablename__ = "document_hashes"
+
+    file_hash = Column(String(64), primary_key=True)  # SHA-256 hex
+    doc_id = Column(String(36), nullable=False)
+    filename = Column(Text, nullable=False)
+    ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class AuditLog(Base):

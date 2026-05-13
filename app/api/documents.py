@@ -1,8 +1,10 @@
+import hashlib
+import io
 import json
 import os
-import shutil
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,6 +12,8 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 
 load_dotenv(Path(__file__).parent.parent.parent / "config" / ".env")
 
+from app.auth.models import DocumentHash
+from app.database import SessionLocal
 from app.ingestion.classifier import DocumentClassifier
 from app.ingestion.ocr_worker import OCRWorker
 from app.ingestion.text_cleaner import TextCleaner
@@ -84,16 +88,36 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
+    # --- Layer 1: file fingerprint deduplication ---
+    file_bytes = await file.read()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    db = SessionLocal()
+    try:
+        existing = db.query(DocumentHash).filter_by(file_hash=file_hash).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "duplicate_document",
+                    "message": f"This file has already been ingested.",
+                    "existing_doc_id": existing.doc_id,
+                    "filename": existing.filename,
+                    "ingested_at": existing.ingested_at.isoformat(),
+                },
+            )
+    finally:
+        db.close()
+
     doc_id = str(uuid.uuid4())
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        shutil.copyfileobj(file.file, tmp)
+        tmp.write(file_bytes)
         tmp_path = tmp.name
 
     try:
         storage = get_storage_service()
-        with open(tmp_path, "rb") as f:
-            storage_uri = storage.upload_pdf(f, doc_id)
+        storage_uri = storage.upload_pdf(io.BytesIO(file_bytes), doc_id)
 
         if hasattr(storage, "get_local_path"):
             process_path = storage.get_local_path(doc_id)
@@ -136,7 +160,9 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         acl = _resolve_acl(request)
         index_docs = [
             {
-                "chunk_id": f"{doc_id}_chunk_{i}",
+                # Deterministic chunk ID: same file always produces the same IDs,
+                # so re-indexing overwrites rather than duplicates in OpenSearch.
+                "chunk_id": hashlib.sha256(f"{file_hash}:{i}".encode()).hexdigest()[:32],
                 "doc_id": doc_id,
                 "text": chunk.child_text,
                 "embedding": embedding,
@@ -164,6 +190,19 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         )
 
         indexed_count = _get_indexer().index_chunks(index_docs)
+
+        # Layer 1: record fingerprint so re-upload of same file is rejected
+        db = SessionLocal()
+        try:
+            db.add(DocumentHash(
+                file_hash=file_hash,
+                doc_id=doc_id,
+                filename=file.filename,
+                ingested_at=datetime.utcnow(),
+            ))
+            db.commit()
+        finally:
+            db.close()
 
     finally:
         os.unlink(tmp_path)
