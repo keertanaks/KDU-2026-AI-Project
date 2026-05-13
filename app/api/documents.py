@@ -22,6 +22,11 @@ from app.schemas.document import IngestResponse
 
 router = APIRouter()
 
+# Debug output root — created once at import time; dev-only, never committed
+_DEBUG_ROOT = Path(__file__).parent.parent.parent / "debug_outputs"
+for _sub in ("ocr", "chunks", "phi", "cleaned"):
+    (_DEBUG_ROOT / _sub).mkdir(parents=True, exist_ok=True)
+
 _ocr = None
 _phi = None
 _embedder = None
@@ -99,8 +104,19 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
 
         ocr_result = _get_ocr().extract_text(process_path, doc_type)
         raw_text = ocr_result["text"]
+        ocr_lines = ocr_result.get("lines")  # only present for handwritten
+        if ocr_lines:
+            # Write per-line confidence so low-quality lines are immediately visible
+            ocr_debug = "\n".join(
+                f"[conf={l['confidence']:.2f}] {l['text']}" for l in ocr_lines
+            )
+            ocr_debug += f"\n\n--- avg confidence: {ocr_result['success_rate']:.4f} ---"
+        else:
+            ocr_debug = raw_text
+        (_DEBUG_ROOT / "ocr" / f"{doc_id}.txt").write_text(ocr_debug, encoding="utf-8")
 
         clean_text = TextCleaner.clean(raw_text)
+        (_DEBUG_ROOT / "cleaned" / f"{doc_id}.txt").write_text(clean_text, encoding="utf-8")
 
         chunks = AdaptiveChunker.chunk(clean_text)
 
@@ -108,6 +124,10 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         all_phi_spans = phi_tagger.tag(clean_text)
         phi_span_count = len(all_phi_spans)
         phi_spans_json = json.dumps([s.to_dict() for s in all_phi_spans])
+        (_DEBUG_ROOT / "phi" / f"{doc_id}.json").write_text(
+            json.dumps([s.to_dict() for s in all_phi_spans], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
         embedder = _get_embedder()
         child_texts = [c.child_text for c in chunks]
@@ -126,6 +146,22 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             }
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
         ]
+        (_DEBUG_ROOT / "chunks" / f"{doc_id}.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "chunk_id": doc["chunk_id"],
+                        "child_text": doc["text"],
+                        "parent_text": chunks[i].parent_text,
+                        "doc_type": doc["doc_type"],
+                    }
+                    for i, doc in enumerate(index_docs)
+                ],
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
         indexed_count = _get_indexer().index_chunks(index_docs)
 

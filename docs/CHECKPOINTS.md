@@ -232,3 +232,24 @@ Phase 2.1 retrieval testing (classify → OCR → clean → chunk → PHI → em
 
 ### Safe to Proceed
 Yes — all pipeline stages verified end-to-end with local embeddings. Resolve blocked items (OpenAI key, AWS credentials) for production validation.
+
+---
+
+## Pending Improvements (deferred — resolve after full implementation)
+
+These are known issues noted during Phase 2.1 development. Deferred deliberately to avoid interrupting implementation momentum. All are isolated changes with no dependencies on Phases 2.2–5.
+
+### PI-1 — OpenAI API Key Invalid
+**File:** `config/.env` → `OPENAI_API_KEY`
+**Current state:** Key returns HTTP 401. Production embedding path (`EMBEDDING_PROVIDER=openai`, `text-embedding-3-small`, 1536-d, `healthcare_chunks` index) is untested.
+**Workaround active:** `EMBEDDING_PROVIDER=local` (sentence-transformers `all-MiniLM-L6-v2`, 384-d, `healthcare_chunks_local` index).
+**Fix:** Obtain valid key from `platform.openai.com/api-keys` → update `config/.env` → set `EMBEDDING_PROVIDER=openai` → re-ingest all documents into the production index.
+**Impact when fixed:** Re-ingest required; no code changes needed — the dual-index logic in `Embedder` and `Indexer` already handles the switch.
+
+### PI-2 — Handwritten OCR Model Upgrade
+**File:** `app/ingestion/ocr_worker.py` → `_extract_handwritten()`
+**Current state:** PaddleOCR v2.9.1 produces low-confidence lines on handwritten documents (avg ~0.85, some lines as low as 0.56). Confirmed by per-line confidence scores in `debug_outputs/ocr/`.
+**Proposed change:** Replace PaddleOCR with `baidu/qianfan-ocr-fast:free` (API-based, higher accuracy on handwritten). Requires Qianfan/OpenRouter API credentials.
+**Scope:** Change is confined to `_extract_handwritten()` only — classifier, preprocessor, chunker, PHI tagger, embedder, indexer are all unaffected.
+**Fix steps:** Obtain API credentials → update `config/.env` with `QIANFAN_API_KEY` → rewrite `_extract_handwritten()` to call the API → re-ingest handwritten documents → verify confidence improvement in `debug_outputs/ocr/`.
+**Impact when fixed:** Re-ingest of handwritten documents only; no architectural changes.

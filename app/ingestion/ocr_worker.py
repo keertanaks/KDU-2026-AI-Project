@@ -64,16 +64,24 @@ class OCRWorker:
         paddle = self._get_paddle()
         doc = fitz.open(pdf_path)
         full_text = ""
+        all_lines = []  # [{text, confidence}] across all pages
         for page_num in range(len(doc)):
             img = PreprocessingPipeline.preprocess(pdf_path, page_num)
             results = paddle.ocr(img, cls=True)
             if results and results[0]:
-                page_text = "\n".join(line[1][0] for line in results[0])
-                full_text += page_text + "\n"
+                for line in results[0]:
+                    text, confidence = line[1][0], float(line[1][1])
+                    all_lines.append({"text": text, "confidence": confidence})
+                    full_text += text + "\n"
         doc.close()
+        avg_confidence = (
+            sum(l["confidence"] for l in all_lines) / len(all_lines)
+            if all_lines else 0.0
+        )
         return {
             "text": full_text,
+            "lines": all_lines,
             "doc_type": DocType.HANDWRITTEN,
-            "success_rate": 0.87,
+            "success_rate": round(avg_confidence, 4),
             "method": "PaddleOCR PP-OCRv5",
         }
