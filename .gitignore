@@ -1,0 +1,49 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Environment — never commit real secrets
+config/.env
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend build artefacts (Phase 1.6+)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Claude Code personal overrides (project settings.json is committed)
+.claude/settings.local.json
+
+# Docker volumes / data
+opensearch_data/
+postgres_data/
+
+# Alembic compiled
+alembic/__pycache__/
