@@ -159,7 +159,7 @@ class TestBuildPlaceholderContext:
         ])]
         context, mapping = _build_placeholder_context(chunks)
         try:
-            assert mapping.get("PERSON_1") == "Emily Moore"
+            assert mapping.get("[[PHI_PERSON_1]]") == "Emily Moore"
         finally:
             mapping.clear()
 
@@ -170,8 +170,8 @@ class TestBuildPlaceholderContext:
         ])]
         context, mapping = _build_placeholder_context(chunks)
         try:
-            assert "PERSON_1" in mapping
-            assert "PERSON_2" in mapping
+            assert "[[PHI_PERSON_1]]" in mapping
+            assert "[[PHI_PERSON_2]]" in mapping
         finally:
             mapping.clear()
 

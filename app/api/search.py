@@ -103,5 +103,7 @@ async def search(
         masked_chunks=masked_chunks,
         sources=result.get("sources", []),
         latency_ms=result.get("latency_ms", 0),
+        search_latency_ms=result.get("search_latency_ms", 0),
+        answer_latency_ms=result.get("answer_latency_ms", 0),
         user_role=role_str,
     )

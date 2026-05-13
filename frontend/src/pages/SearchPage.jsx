@@ -71,7 +71,17 @@ export default function SearchPage({ user, onLogout }) {
           <div className="mt-6 space-y-6">
             {/* Latency badge */}
             <div className="flex items-center gap-2 text-xs text-gray-400">
-              <span>{searchData.latency_ms}ms</span>
+              {searchData.search_latency_ms > 0 ? (
+                <span>
+                  Search: {searchData.search_latency_ms}ms
+                  {searchData.answer_latency_ms > 0 && (
+                    <> · Answer: {searchData.answer_latency_ms}ms</>
+                  )}
+                  {' '}· Total: {searchData.latency_ms}ms
+                </span>
+              ) : (
+                <span>{searchData.latency_ms}ms</span>
+              )}
               {searchData.sources?.length > 0 && (
                 <span>· {searchData.sources.length} source{searchData.sources.length !== 1 ? 's' : ''}</span>
               )}

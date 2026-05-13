@@ -19,4 +19,6 @@ class SearchResponse(BaseModel):
     masked_chunks: List[SearchResult]
     sources: List[str]
     latency_ms: int
+    search_latency_ms: int          # retrieval + rerank + masking
+    answer_latency_ms: int          # answer generation only
     user_role: str

@@ -46,6 +46,8 @@ class SearchState(TypedDict):
     answer_generation_status: str   # "success" | "skipped" | "failed"
     sources: List[str]
     latency_ms: int
+    search_latency_ms: int      # retrieval + rerank + masking only
+    answer_latency_ms: int      # answer generation only
     start_time: float
 
 
@@ -174,7 +176,12 @@ class SearchGraph:
         build its own reversible placeholder context.  The masked_results
         (containing <TYPE_REDACTED> tokens) are for UI display only and are
         NOT sent to the LLM.
+
+        search_latency_ms is captured here — just before the LLM call — so it
+        measures retrieval + rerank + masking only, excluding answer generation.
         """
+        search_latency_ms = int((time.time() - state["start_time"]) * 1000)
+
         answer, status, sources = self.answer_generator.generate(
             state["normalized_query"],
             state["reranked"],
@@ -185,11 +192,15 @@ class SearchGraph:
             "generated_answer": answer,
             "answer_generation_status": status,
             "sources": sources,
+            "search_latency_ms": search_latency_ms,
         }
 
     @staticmethod
     def _respond(state: SearchState) -> Dict:
         latency_ms = int((time.time() - state["start_time"]) * 1000)
+        search_latency_ms = state.get("search_latency_ms", latency_ms)
+        answer_latency_ms = max(0, latency_ms - search_latency_ms)
+
         doc_ids = [r["doc_id"] for r in state["masked_results"]]
         masking_label = (
             "none"
@@ -211,14 +222,21 @@ class SearchGraph:
             logger.warning("Audit log failed (non-fatal): %s", exc)
 
         logger.info(
-            "search done query='%s' role=%s results=%d answer=%s latency=%dms",
+            "search done query='%s' role=%s results=%d answer=%s "
+            "search=%dms answer=%dms total=%dms",
             state["query_text"][:60],
             state["role"],
             len(doc_ids),
             state.get("answer_generation_status", "skipped"),
+            search_latency_ms,
+            answer_latency_ms,
             latency_ms,
         )
-        return {"latency_ms": latency_ms}
+        return {
+            "latency_ms": latency_ms,
+            "search_latency_ms": search_latency_ms,
+            "answer_latency_ms": answer_latency_ms,
+        }
 
     # ------------------------------------------------------------------
     # Public API
@@ -241,6 +259,8 @@ class SearchGraph:
             "answer_generation_status": "skipped",
             "sources": [],
             "latency_ms": 0,
+            "search_latency_ms": 0,
+            "answer_latency_ms": 0,
             "start_time": time.time(),
         }
         return self._graph.invoke(initial)

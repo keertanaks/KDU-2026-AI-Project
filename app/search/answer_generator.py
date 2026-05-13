@@ -2,18 +2,21 @@
 Phase 3/4 — Grounded answer generation via OpenRouter.
 
 PHI Safety Contract:
-  1. Context sent to the LLM always uses reversible numbered placeholders
-     (e.g. PERSON_1, DATE_TIME_1) — raw PHI is NEVER forwarded to any provider.
+  1. Context sent to the LLM always uses reversible bracketed placeholders
+     (e.g. [[PHI_PERSON_1]], [[PHI_DATE_TIME_1]]) — raw PHI is NEVER forwarded.
   2. The placeholder-to-original mapping lives only in local request memory and
      is explicitly cleared before this function returns.
   3. Placeholder restoration for treating_clinician happens here, immediately
      before the function returns, and the mapping is then discarded.
-  4. The mapping is NEVER logged, cached, stored, or sent anywhere.
+  4. For all other roles the LLM output is redacted: any remaining placeholder
+     tokens are replaced with <TYPE_REDACTED> strings before returning.
+  5. The mapping is NEVER logged, cached, stored, or sent anywhere.
 """
 
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,22 @@ _TYPE_PREFIX: Dict[str, str] = {
     "MEDICATION": "MEDICATION",
 }
 
+# Ordered list of (pattern, replacement) pairs for redact_placeholders().
+# Specific types listed first; catch-all last.
+_REDACT_PATTERNS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"\[\[PHI_PERSON_\d+\]\]"),    "<PERSON_REDACTED>"),
+    (re.compile(r"\[\[PHI_LOCATION_\d+\]\]"),  "<LOCATION_REDACTED>"),
+    (re.compile(r"\[\[PHI_DATE_TIME_\d+\]\]"), "<DATE_TIME_REDACTED>"),
+    (re.compile(r"\[\[PHI_ID_\d+\]\]"),        "<ID_REDACTED>"),
+    (re.compile(r"\[\[PHI_PHONE_\d+\]\]"),     "<PHONE_REDACTED>"),
+    (re.compile(r"\[\[PHI_EMAIL_\d+\]\]"),     "<EMAIL_REDACTED>"),
+    (re.compile(r"\[\[PHI_URL_\d+\]\]"),       "<URL_REDACTED>"),
+    (re.compile(r"\[\[PHI_DIAGNOSIS_\d+\]\]"), "<DIAGNOSIS_REDACTED>"),
+    (re.compile(r"\[\[PHI_MEDICATION_\d+\]\]"),"<MEDICATION_REDACTED>"),
+    # Catch-all for any prefix type not listed above.
+    (re.compile(r"\[\[PHI_\w+_\d+\]\]"),      "<PHI_REDACTED>"),
+]
+
 
 def _prefix(entity_type: str) -> str:
     return _TYPE_PREFIX.get(entity_type, "PHI")
@@ -60,15 +79,20 @@ def _build_placeholder_context(
     reranked_chunks: List[Dict],
 ) -> Tuple[str, Dict[str, str]]:
     """
-    Replaces every PHI span in each chunk's original text with a numbered
-    placeholder token, building a single context string for the LLM.
+    Replaces every PHI span in each chunk's original text with a bracketed
+    placeholder token of the form [[PHI_TYPE_N]], building a single context
+    string for the LLM.
+
+    Bracket format (e.g. [[PHI_PERSON_1]]) is intentionally distinctive so
+    LLMs do not rewrite or merge tokens the way they sometimes do with bare
+    identifiers like PERSON_1.
 
     Returns:
         context  — placeholder-masked multi-chunk context string
-        mapping  — {placeholder: original_text}; caller must clear() this after use
+        mapping  — {placeholder: original_text}; caller must clear() after use
 
-    Span offsets from ingestion time are applied in reverse order per chunk so
-    earlier spans are not shifted by later replacements.
+    Span offsets are applied in reverse order per chunk so earlier spans are
+    not shifted by later replacements.
     """
     mapping: Dict[str, str] = {}
     counters: Dict[str, int] = {}
@@ -89,7 +113,7 @@ def _build_placeholder_context(
                 continue
             prefix = _prefix(span.get("type", "PHI"))
             counters[prefix] = counters.get(prefix, 0) + 1
-            token = f"{prefix}_{counters[prefix]}"
+            token = f"[[PHI_{prefix}_{counters[prefix]}]]"
             original = "".join(chars[start:end])
             mapping[token] = original
             chars[start:end] = list(token)
@@ -100,8 +124,20 @@ def _build_placeholder_context(
     return context, mapping
 
 
+def redact_placeholders(text: str) -> str:
+    """
+    Replace any remaining [[PHI_TYPE_N]] tokens with <TYPE_REDACTED> strings.
+
+    Called on the LLM output for non-treating roles so no placeholder token
+    ever reaches the UI.
+    """
+    for pattern, replacement in _REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _restore(text: str, mapping: Dict[str, str]) -> str:
-    """Substitute placeholder tokens back to original PHI values."""
+    """Substitute [[PHI_TYPE_N]] tokens back to original PHI values."""
     for token, original in mapping.items():
         text = text.replace(token, original)
     return text
@@ -128,6 +164,10 @@ class AnswerGenerator:
         answer  — generated text (empty string when status != "success")
         status  — "success" | "skipped" | "failed"
         sources — list of doc_ids from the reranked chunks
+
+        PHI handling:
+          - treating_clinician  → placeholders restored to original values
+          - all other roles     → placeholders replaced with <TYPE_REDACTED>
         """
         sources = [
             c.get("_source", {}).get("doc_id", "")
@@ -170,9 +210,13 @@ class AnswerGenerator:
             )
             answer = response.choices[0].message.content or ""
 
-            # Restore only for treating clinicians — immediately before returning.
             if role == "treating_clinician":
+                # Restore original PHI values only for treating clinicians.
                 answer = _restore(answer, mapping)
+            else:
+                # Replace any placeholder tokens with redacted strings so no
+                # [[PHI_*]] token ever reaches the UI for restricted roles.
+                answer = redact_placeholders(answer)
 
             return answer, "success", sources
 
