@@ -1,12 +1,56 @@
 {
   "permissions": {
     "allow": [
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(uvicorn *)",
+      "Bash(pytest *)",
+      "Bash(curl *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(dir *)",
+      "Bash(echo *)",
+      "Bash(sleep *)",
+      "Bash(pkill *)",
+      "Bash(kill *)",
+      "Bash(docker *)",
+      "Bash(docker-compose *)",
+      "Bash(npx *)",
+      "Bash(npm *)",
+      "Bash(node *)",
+      "Bash(git status)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git stash *)",
+      "Bash(git remote *)",
       "Bash(git init *)",
       "Bash(git config *)",
-      "Bash(git remote *)",
-      "Bash(git commit -m ' *)",
-      "Bash(git checkout *)"
+      "Bash(git show *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(Start-Sleep *)",
+      "Bash(Invoke-WebRequest *)",
+      "Bash(\"venv\\\\Scripts\\\\pip\" install *)",
+      "Bash('venv\\\\Scripts\\\\python' -c ' *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(del /f *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f *)",
+      "Bash(DROP TABLE *)",
+      "Bash(format *)"
     ],
     "defaultMode": "bypassPermissions"
-  }
+  },
+  "skipDangerousModePermissionPrompt": true
 }

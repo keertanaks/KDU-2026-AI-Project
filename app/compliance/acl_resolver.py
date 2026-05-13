@@ -34,5 +34,6 @@ class ACLResolver:
             # Research users see shared research content and admin-uploaded docs.
             return ["research_allowed", "admin_only"]
 
-        # ADMINISTRATOR — full read access for auditing purposes.
+        # ADMINISTRATOR — full read access for auditing purposes (search is
+        # blocked at the API layer before ACL is ever resolved).
         return ["admin_only", "dept_cardiology", "research_allowed"]

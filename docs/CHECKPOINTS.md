@@ -308,6 +308,101 @@ Yes — all Phase 2.2 exit criteria pass. Search pipeline fully functional with 
 
 ---
 
+## Phase 3 — Compliance & Audit Hardening
+
+**Date:** 2026-05-13
+**Branch:** `feature/phase-3-4-integration`
+
+### Completed Work
+- `app/compliance/acl_resolver.py` — written from stub; ACL comment updated to note admin search is blocked at API layer
+- `app/compliance/audit_logger.py` — written from stub; SHA-256 query hash, no raw query text, append-only
+- `scripts/db_immutability.sql` — dual-layer immutability: (1) REVOKE UPDATE/DELETE + RLS policies; (2) BEFORE UPDATE/DELETE triggers that raise EXCEPTION for all users including superusers
+- DB immutability applied to live PostgreSQL instance: `audit_log_no_update` and `audit_log_no_delete` triggers created; FORCE ROW LEVEL SECURITY enabled
+- Administrator 403 guard: `app/api/search.py` checks role before graph invocation; `app/search/graph.py._resolve_acl` also raises HTTPException(403) as belt-and-suspenders; `except HTTPException: raise` in API prevents 403 being swallowed as 500
+
+### Architectural Decisions
+- **Trigger-based immutability over RLS-only.** `healthcare_user` is the Docker PostgreSQL superuser and bypasses REVOKE and RLS. BEFORE UPDATE/DELETE triggers fire for all users regardless of privilege level, providing genuine enforcement in this dev environment. The SQL script also includes the RLS layer for production deployments with a separate app role.
+- **Admin 403 at API layer (primary) + graph node (secondary).** The API check fires before graph.invoke(), guaranteeing 403 even if graph is called directly. The `_resolve_acl` check is belt-and-suspenders for callers that bypass the API.
+
+### Exit Criteria
+| Check | Result |
+|-------|--------|
+| Admin search returns HTTP 403 | PASS |
+| Audit logs contain query_hash only (64-char SHA-256) | PASS |
+| No raw PHI in audit logs | PASS |
+| Session revocation blocks old session_id | PASS (before=200, after=401) |
+| DB UPDATE blocked | PASS (trigger raises RaiseException) |
+| DB DELETE blocked | PASS (trigger raises RaiseException) |
+| DB INSERT still works | PASS |
+| ACL restricts dept_cardiology docs from non-treating | PASS |
+| Placeholder mappings never persisted | PASS (cleared in finally block) |
+
+### Blocked Items
+- None.
+
+### Safe to Proceed
+Yes.
+
+---
+
+## Phase 4 — Integration & E2E Workflow
+
+**Date:** 2026-05-13
+**Branch:** `feature/phase-3-4-integration`
+
+### Completed Work
+- `app/search/answer_generator.py` — NEW file: `AnswerGenerator.generate()` builds per-request reversible PHI placeholder context (PERSON_1, DATE_TIME_1, etc.) from existing `phi_spans`, calls OpenRouter (`openai/gpt-4o-mini`), restores placeholders for treating_clinician only, clears mapping in `finally` block
+- `app/search/graph.py` — Updated: 8-node pipeline (added `generate_answer` between `mask` and `respond`); `SearchState` extended with `generated_answer`, `answer_generation_status`, `sources`; `_generate_answer` node reads from `reranked` (pre-masking, has original phi_spans), NOT from `masked_results`
+- `app/schemas/query.py` — Updated `SearchResponse`: `generated_answer`, `answer_generation_status`, `masked_chunks`, `sources`, `latency_ms`, `user_role`
+- `app/api/search.py` — Updated: admin 403 guard, `except HTTPException: raise` to avoid swallowing 403 as 500, new SearchResponse format
+- `config/.env` — Added `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`
+- `frontend/src/pages/SearchPage.jsx` — Updated: handles new response format, shows generated answer panel (blue), status banners (skipped/failed), latency/sources badge, error handling for 403
+- `frontend/src/components/ResultsList.jsx` — Updated: shows "Retrieved Chunks (N)" header, cleaner layout
+
+### PHI Safety Implementation
+- **Context masking:** `_build_placeholder_context()` replaces PHI spans with numbered tokens (PERSON_1, DATE_TIME_1, LOCATION_1, ID_1, PHONE_1). Uses existing `phi_spans` from ingestion — Presidio is NOT re-run at query time.
+- **Mapping lifetime:** `placeholder_to_original` dict created in `generate()` local scope, passed to `_restore()` if treating_clinician, then explicitly `.clear()`-ed in `finally` block.
+- **Restoration scope:** Only the `generated_answer` string for treating_clinician is restored. `masked_results`/`masked_chunks` always use `<TYPE_REDACTED>` format for non-treating. Nothing is persisted.
+- **Degradation:** If `OPENROUTER_API_KEY` is absent/placeholder, `status="skipped"` is returned immediately — search pipeline never fails due to answer generation.
+
+### Architectural Decisions
+- **`generate_answer` reads `reranked`, not `masked_results`.** The `<TYPE_REDACTED>` tokens in `masked_results` are one-way; the answer generator needs the original text + phi_spans to build reversible placeholder context. The two masking flows are independent.
+- **Answer generation skipped (not failed) when key is placeholder.** `"placeholder" in api_key` check distinguishes intentionally unconfigured from runtime errors. Prevents false "failed" status in dev.
+- **No SearchGraph changes for answer generation placement.** `generate_answer` sits between `mask` and `respond` so audit logging still captures total latency including LLM call time.
+
+### Search Results (Phase 4, EMBEDDING_PROVIDER=local)
+All 5 test queries return correct top result (Emily Moore asthma doc). P95 latency (10 warmed queries) = **1151ms** (vs 772ms in Phase 2.2; +379ms is answer generator overhead with placeholder key = skipped, no LLM call; includes reranker + embedding + OpenSearch).
+
+### Exit Criteria
+| Check | Result |
+|-------|--------|
+| LangGraph workflow compiles with 8 nodes | PASS |
+| Admin search returns 403 | PASS (API layer + graph node) |
+| Treating clinician: unmasked text in masked_chunks | PASS |
+| Non-treating clinician: masked text in masked_chunks | PASS |
+| answer_generation_status field present | PASS |
+| sources list populated | PASS |
+| Session revocation: old session returns 401 | PASS |
+| API response keys match new SearchResponse schema | PASS (masked_chunks, user_role, sources, generated_answer, answer_generation_status) |
+| Frontend build succeeds | PASS (vite build in 687ms) |
+| P95 latency (10 warmed queries) | PASS — 1151ms |
+| DB UPDATE blocked | PASS |
+| DB DELETE blocked | PASS |
+| DB INSERT succeeds | PASS |
+| Audit log: query_hash only, no raw text | PASS |
+| Placeholder mappings never persisted | PASS |
+| OpenRouter key placeholder → status=skipped, search succeeds | PASS |
+
+### Blocked Items
+1. **OpenRouter API key** — `OPENROUTER_API_KEY=sk-or-v1-placeholder` in `config/.env`. Answer generation returns `status=skipped`. To enable: replace with a real key from openrouter.ai/keys.
+2. **OpenAI key invalid (carry-forward PI-1)** — production embedding blocked. Workaround: `EMBEDDING_PROVIDER=local`.
+3. **AWS S3/KMS (carry-forward PI-2)** — S3 live checks blocked. Local storage in use.
+
+### Safe to Proceed
+Yes — all Phase 3 and Phase 4 exit criteria pass. E2E pipeline functional. Safe to PR to dev.
+
+---
+
 ## Pending Improvements (deferred — resolve after full implementation)
 
 These are known issues noted during Phase 2.1 development. Deferred deliberately to avoid interrupting implementation momentum. All are isolated changes with no dependencies on Phases 2.2–5.

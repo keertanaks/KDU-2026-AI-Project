@@ -1478,6 +1478,9 @@ class ACLResolver:
 - [ ] Masking rule: non_treating_clinician role queries, verify <NAME_REDACTED>, <MRN_REDACTED>, etc. in output
 - [ ] Session revocation blocks access: Create session, logout, attempt to use old session_id, verify 401 returned
 - [ ] Administrator role restrictions: Login as administrator, attempt to call /api/search endpoint, verify 403 or full masking applied
+- [ ] No unmasked PHI is sent to any LLM for any role, including treating_clinician
+- [ ] Placeholder mapping is request-scoped only and not stored in DB, audit logs, OpenSearch, frontend, or debug outputs
+- [ ] Administrator cannot receive normal search content
 
 ---
 
@@ -1607,7 +1610,12 @@ def test_chunker_clinical_note():
 - [ ] Session expiry works: Create session, wait > 8 hours (or manually set expiry to past), verify expired session rejected
 - [ ] Full smoke test: New user → login → upload 5 PDFs → search 3 queries → verify all results masked correctly per role
 - [ ] No console errors: Frontend dev tools show no JavaScript errors during full workflow
-
+- [ ] Final answer generation works when OPENAI_API_KEY is valid
+- [ ] If OPENAI_API_KEY is invalid/missing, response returns retrieved masked chunks and answer_generation=skipped
+- [ ] Frontend displays generated answer, source doc_ids, and retrieved chunks
+- [ ] Treating clinician final answer restores placeholders only after LLM response
+- [ ] Non-treating clinician final answer remains masked
+- [ ] No unmasked PHI is visible in browser for restricted roles
 ---
 
 ## Phase 5: Evaluation (POST-DEPLOYMENT)

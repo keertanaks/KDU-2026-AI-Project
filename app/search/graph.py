@@ -1,9 +1,10 @@
 """
 Phase 2.2 Search Pipeline — LangGraph state machine.
+Phase 3/4 additions: administrator 403 guard, grounded answer generation.
 
 Node sequence:
     normalize_query → resolve_acl → embed_query → retrieve
-    → rerank → mask → respond → END
+    → rerank → mask → generate_answer → respond → END
 
 State is a plain TypedDict; each node receives the full state and
 returns an updated copy.  The 'db' key holds a live SQLAlchemy session
@@ -14,12 +15,15 @@ import logging
 import time
 from typing import Any, Dict, List
 
+from fastapi import HTTPException
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 
+from app.auth.models import UserRole
 from app.compliance.acl_resolver import ACLResolver
 from app.compliance.audit_logger import AuditLogger
 from app.ingestion.embedder import Embedder
+from app.search.answer_generator import AnswerGenerator
 from app.search.masker import ResponseMasker
 from app.search.reranker import Reranker
 from app.search.retriever import HybridRetriever
@@ -31,13 +35,16 @@ class SearchState(TypedDict):
     query_text: str
     user_id: str
     role: str
-    db: Any                    # SQLAlchemy Session — not serialisable, passed by ref
+    db: Any                     # SQLAlchemy Session — not serialisable, passed by ref
     normalized_query: str
     user_acl: List[str]
     query_embedding: List[float]
     candidates: List[Dict]
     reranked: List[Dict]
     masked_results: List[Dict]
+    generated_answer: str
+    answer_generation_status: str   # "success" | "skipped" | "failed"
+    sources: List[str]
     latency_ms: int
     start_time: float
 
@@ -46,14 +53,15 @@ class SearchGraph:
     """
     Compiled LangGraph workflow for the search pipeline.
 
-    Components (embedder, retriever, reranker) are singletons instantiated
-    at construction time so model weights are loaded only once per process.
+    Components (embedder, retriever, reranker, answer_generator) are singletons
+    instantiated at construction time so model weights are loaded only once.
     """
 
     def __init__(self):
         self.embedder = Embedder()
         self.retriever = HybridRetriever()
         self.reranker = Reranker()
+        self.answer_generator = AnswerGenerator()
         self._graph = self._build_graph()
         logger.info("SearchGraph ready (provider=%s)", self.embedder.provider)
 
@@ -70,6 +78,7 @@ class SearchGraph:
         wf.add_node("retrieve", self._retrieve)
         wf.add_node("rerank", self._rerank)
         wf.add_node("mask", self._mask)
+        wf.add_node("generate_answer", self._generate_answer)
         wf.add_node("respond", self._respond)
 
         wf.set_entry_point("normalize_query")
@@ -78,7 +87,8 @@ class SearchGraph:
         wf.add_edge("embed_query", "retrieve")
         wf.add_edge("retrieve", "rerank")
         wf.add_edge("rerank", "mask")
-        wf.add_edge("mask", "respond")
+        wf.add_edge("mask", "generate_answer")
+        wf.add_edge("generate_answer", "respond")
         wf.add_edge("respond", END)
 
         return wf.compile()
@@ -95,6 +105,19 @@ class SearchGraph:
 
     @staticmethod
     def _resolve_acl(state: SearchState) -> Dict:
+        # Phase 3: administrators are blocked from content search.
+        role_val = state["role"]
+        try:
+            role_enum = UserRole(role_val)
+        except ValueError:
+            role_enum = None
+
+        if role_enum == UserRole.ADMINISTRATOR or role_val == "administrator":
+            raise HTTPException(
+                status_code=403,
+                detail="Administrator role cannot perform searches.",
+            )
+
         acl = ACLResolver.resolve_acl(state["db"], state["user_id"])
         logger.debug("resolve_acl user=%s role=%s acl=%s", state["user_id"], state["role"], acl)
         return {"user_acl": acl}
@@ -145,6 +168,25 @@ class SearchGraph:
         logger.debug("mask: %d results, role=%s", len(masked_results), state["role"])
         return {"masked_results": masked_results}
 
+    def _generate_answer(self, state: SearchState) -> Dict:
+        """
+        Calls AnswerGenerator with the reranked (pre-masking) chunks so it can
+        build its own reversible placeholder context.  The masked_results
+        (containing <TYPE_REDACTED> tokens) are for UI display only and are
+        NOT sent to the LLM.
+        """
+        answer, status, sources = self.answer_generator.generate(
+            state["normalized_query"],
+            state["reranked"],
+            state["role"],
+        )
+        logger.debug("generate_answer: status=%s sources=%s", status, sources)
+        return {
+            "generated_answer": answer,
+            "answer_generation_status": status,
+            "sources": sources,
+        }
+
     @staticmethod
     def _respond(state: SearchState) -> Dict:
         latency_ms = int((time.time() - state["start_time"]) * 1000)
@@ -169,10 +211,11 @@ class SearchGraph:
             logger.warning("Audit log failed (non-fatal): %s", exc)
 
         logger.info(
-            "search done query='%s' role=%s results=%d latency=%dms",
+            "search done query='%s' role=%s results=%d answer=%s latency=%dms",
             state["query_text"][:60],
             state["role"],
             len(doc_ids),
+            state.get("answer_generation_status", "skipped"),
             latency_ms,
         )
         return {"latency_ms": latency_ms}
@@ -194,6 +237,9 @@ class SearchGraph:
             "candidates": [],
             "reranked": [],
             "masked_results": [],
+            "generated_answer": "",
+            "answer_generation_status": "skipped",
+            "sources": [],
             "latency_ms": 0,
             "start_time": time.time(),
         }

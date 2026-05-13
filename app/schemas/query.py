@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
 from typing import List
+
+from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
@@ -13,7 +14,9 @@ class SearchResult(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    query: str
-    masked_results: List[SearchResult]
+    generated_answer: str
+    answer_generation_status: str   # "success" | "skipped" | "failed"
+    masked_chunks: List[SearchResult]
+    sources: List[str]
     latency_ms: int
-    role: str
+    user_role: str

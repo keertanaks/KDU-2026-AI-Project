@@ -1,10 +1,14 @@
 """
-Phase 2.2 Search endpoint.
+Phase 2.2 Search endpoint — updated in Phase 3/4.
 
 POST /api/search
     Body: {"query": "<text>"}
     Auth: session cookie required (set by login endpoint)
-    Returns: masked_results with text, doc_id, score
+    Returns: generated_answer, answer_generation_status, masked_chunks, sources,
+             latency_ms, user_role
+
+Phase 3 change: administrator role returns 403 before any pipeline execution.
+Phase 4 change: response includes generated_answer and sources from AnswerGenerator.
 """
 
 import logging
@@ -58,8 +62,14 @@ async def search(
 
     user_id = user["user_id"]
     role = user["role"]
-    # Normalise role to string value (enum or str both accepted)
     role_str = role.value if hasattr(role, "value") else str(role)
+
+    # Phase 3: administrator role is blocked from content search.
+    if role_str == "administrator":
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator role cannot perform searches.",
+        )
 
     logger.info("search request user=%s role=%s query='%s'", user_id, role_str, payload.query[:80])
 
@@ -72,11 +82,13 @@ async def search(
             role=role_str,
             db=db,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Search pipeline error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Search failed: {exc}")
 
-    masked_results = [
+    masked_chunks = [
         SearchResult(
             text=r["text"],
             doc_id=r["doc_id"],
@@ -86,8 +98,10 @@ async def search(
     ]
 
     return SearchResponse(
-        query=payload.query,
-        masked_results=masked_results,
+        generated_answer=result.get("generated_answer", ""),
+        answer_generation_status=result.get("answer_generation_status", "skipped"),
+        masked_chunks=masked_chunks,
+        sources=result.get("sources", []),
         latency_ms=result.get("latency_ms", 0),
-        role=role_str,
+        user_role=role_str,
     )
