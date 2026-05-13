@@ -160,27 +160,27 @@ Yes.
 
 **Date:** 2026-05-13
 **Branch:** `feature/phase-2.1-ingestion`
-**Commit:** `ad97abdde64012707087a73f5f1f162450ddfab5`
+**Commit:** `97eb5ab` (latest — 4 commits total on branch, merged to dev via PR #3)
 
 ### Completed Work
 - `app/ingestion/classifier.py` — `DocumentClassifier.classify()`: PyMuPDF text probe (TYPED if >100 chars), OpenCV heuristics (contrast+edge density) for SCANNED vs HANDWRITTEN
 - `app/ingestion/preprocessor.py` — `PreprocessingPipeline.preprocess()`: 300 DPI render, bounding-box crop, CLAHE, sharpen kernel, safe deskew via Hough lines
-- `app/ingestion/ocr_worker.py` — `OCRWorker`: PyMuPDF (typed, 99%+), Tesseract 5 (scanned, ~93%), PaddleOCR v2 PP-OCRv4 (handwritten, ~87%); lazy-loads PaddleOCR to avoid slow startup
+- `app/ingestion/ocr_worker.py` — `OCRWorker`: PyMuPDF (typed, 99%+), Tesseract 5 (scanned, ~93%), PaddleOCR v2 PP-OCRv4 (handwritten); lazy-loads PaddleOCR; captures per-line confidence (`line[1][1]`) and computes real avg `success_rate` instead of hardcoded 0.87
 - `app/ingestion/text_cleaner.py` — `TextCleaner.clean()`: strips non-printable chars, normalises unicode dashes/quotes, collapses whitespace
 - `app/ingestion/chunker.py` — `AdaptiveChunker`: prescription (atomic), lab report (line-per-chunk), form (section-per-chunk), clinical note (RecursiveCharacterTextSplitter 512/50)
 - `app/ingestion/phi_tagger.py` — `PhiTagger`: Presidio `AnalyzerEngine`, detects 18 HIPAA identifier types
-- `app/ingestion/embedder.py` — `Embedder`: OpenAI `text-embedding-3-small`, 1536 dims, batch via single API call
-- `app/ingestion/indexer.py` — `Indexer.ensure_index()` creates nmslib HNSW mapping; `index_chunks()` bulk-indexes via opensearchpy helpers
-- `app/storage/local_storage_service.py` — `LocalStorageService`: stores PDFs under `uploads/` on disk
+- `app/ingestion/embedder.py` — `Embedder`: dual-provider; OpenAI `text-embedding-3-small` (1536-d, production) or sentence-transformers `all-MiniLM-L6-v2` (384-d, dev) via `EMBEDDING_PROVIDER` env var
+- `app/ingestion/indexer.py` — `Indexer`: routes to `healthcare_chunks` (1536-d) or `healthcare_chunks_local` (384-d) based on `EMBEDDING_PROVIDER`; creates nmslib HNSW mapping; bulk-indexes via opensearchpy helpers
+- `app/storage/local_storage_service.py` — `LocalStorageService`: stores PDFs under `uploads/` on disk; `get_local_path()` avoids re-downloading for pipeline processing
 - `app/storage/s3_service.py` — `S3Service`: boto3 `put_object` with `ServerSideEncryption=aws:kms`
 - `app/storage/__init__.py` — `get_storage_service()`: returns `LocalStorageService` if `USE_LOCAL_STORAGE=true`, else `S3Service`
-- `app/api/documents.py` — `POST /api/ingest`: full synchronous pipeline (upload → classify → OCR → clean → chunk → PHI tag → embed → index); module-level singletons for OCR/PHI/embedder/indexer
+- `app/api/documents.py` — `POST /api/ingest`: full synchronous pipeline (upload → classify → OCR → clean → chunk → PHI tag → embed → index); module-level singletons; writes debug artifacts after each stage
 - `app/schemas/document.py` — `IngestResponse`, `ChunkMeta` Pydantic models
 - `app/main.py` — `include_router(documents_router)`
 - `scripts/verify_s3_kms.py` — standalone S3+KMS checklist; outputs PASS/FAIL/BLOCKED per credential
-- `config/.env.example` — added `USE_LOCAL_STORAGE`, `TESSERACT_CMD`
+- `config/.env.example` — added `USE_LOCAL_STORAGE`, `TESSERACT_CMD`, `EMBEDDING_PROVIDER`, `LOCAL_EMBEDDING_MODEL`
 - `requirements.txt` — pinned `paddleocr==2.9.1`, `paddlepaddle==2.6.2`; added `langchain-text-splitters`, `onnxruntime`
-- `sample_data/scanned/`, `sample_data/raw_zip/` directories created
+- `debug_outputs/{ocr,cleaned,chunks,phi}/` — per-ingest debug artifacts for manual inspection; handwritten OCR files show `[conf=0.XX]` prefix per line
 
 ### Architectural Decisions
 - **Storage abstraction.** `get_storage_service()` factory decouples the pipeline from storage backend. `USE_LOCAL_STORAGE=true` (default) uses local disk; `false` routes to S3+KMS. The ingest endpoint calls `get_local_path()` on the local service to avoid re-downloading files for processing.
