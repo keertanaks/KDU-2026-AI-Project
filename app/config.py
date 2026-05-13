@@ -26,3 +26,7 @@ KMS_KEY_ID = os.getenv("KMS_KEY_ID", "")
 
 USE_LOCAL_STORAGE = os.getenv("USE_LOCAL_STORAGE", "true").lower() == "true"
 TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")
+
+# Embedding provider: "openai" (production) or "local" (dev only, no API key needed)
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")
+LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")

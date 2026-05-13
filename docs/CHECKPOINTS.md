@@ -227,5 +227,8 @@ Yes.
 1. **OpenAI API key** — key in `config/.env` returns HTTP 401. Obtain valid key from `platform.openai.com/api-keys`, update `config/.env`. Embedder and end-to-end ingest will then work.
 2. **AWS S3 + KMS** — complete Section 0.3.1 of IMPLEMENTATION_GUIDE.md (bucket creation, KMS key, IAM user, env vars). Then run `python scripts/verify_s3_kms.py` and confirm all PASS before setting `USE_LOCAL_STORAGE=false`.
 
+### Local Embedding Fallback — Development Note
+Phase 2.1 retrieval testing (classify → OCR → clean → chunk → PHI → embed → index) was validated using a local sentence-transformers fallback (`EMBEDDING_PROVIDER=local`, `all-MiniLM-L6-v2`, 384-d) due to the invalid OpenAI key. Local embeddings write to a **separate** OpenSearch index `healthcare_chunks_local` (384-d nmslib HNSW) and are **never** mixed into the production index `healthcare_chunks` (1536-d). This fallback is for development only; production OpenAI embedding validation remains pending until a valid `OPENAI_API_KEY` is supplied. Set `EMBEDDING_PROVIDER=openai` in `config/.env` to switch to the production path.
+
 ### Safe to Proceed
-Yes — all pipeline stages verified. Resolve blocked items before end-to-end ingest test with real documents.
+Yes — all pipeline stages verified end-to-end with local embeddings. Resolve blocked items (OpenAI key, AWS credentials) for production validation.
