@@ -1,0 +1,37 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+sqlalchemy
+psycopg2-binary
+opensearch-py
+torch --index-url https://download.pytorch.org/whl/cpu
+torchvision --index-url https://download.pytorch.org/whl/cpu
+torchaudio --index-url https://download.pytorch.org/whl/cpu
+transformers
+numpy
+scipy
+scikit-learn
+sentence-transformers
+pillow
+opencv-python
+pytesseract
+paddleocr
+pymupdf
+presidio-analyzer
+presidio-anonymizer
+openai
+langchain
+langgraph
+langsmith
+ragas
+boto3
+fastapi-sessions
+bcrypt
+python-dotenv
+pytest
+pytest-asyncio
+black
+isort
+flake8
+mypy
