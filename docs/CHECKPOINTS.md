@@ -414,6 +414,12 @@ These are known issues noted during Phase 2.1 development. Deferred deliberately
 **Fix:** Obtain valid key from `platform.openai.com/api-keys` → update `config/.env` → set `EMBEDDING_PROVIDER=openai` → re-ingest all documents into the production index.
 **Impact when fixed:** Re-ingest required; no code changes needed — the dual-index logic in `Embedder` and `Indexer` already handles the switch.
 
+### PI-3 — Medication Name Correction Map (Typed Prescriptions)
+**File:** `app/ingestion/normalizer.py` → `_MED_NAME_FIXES`
+**Current state:** Typed prescription extraction is generic for table-based prescriptions. Medication name correction currently uses a small correction map for known OCR/layout truncations (e.g. `"Fluticasone and Salmet"` → `"Fluticasone and Salmeterol"`). The map is correct and deterministic for truncations we have observed; any truncated drug name not yet in the map will pass through as-is.
+**Future improvement:** Replace or extend this correction map with a drug-name dictionary or RxNorm-style validation if broader medication normalization is required across a larger document corpus.
+**Scope:** Change is confined to `_MED_NAME_FIXES` dict (and optionally `_TRUNCATED_MED_PATTERNS` in `extraction_validator.py`). No pipeline, storage, or search changes needed.
+
 ### PI-2 — Handwritten OCR Model Upgrade
 **File:** `app/ingestion/ocr_worker.py` → `_extract_handwritten()`
 **Current state:** PaddleOCR v2.9.1 produces low-confidence lines on handwritten documents (avg ~0.85, some lines as low as 0.56). Confirmed by per-line confidence scores in `debug_outputs/ocr/`.

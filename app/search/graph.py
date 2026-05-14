@@ -23,12 +23,27 @@ from app.auth.models import UserRole
 from app.compliance.acl_resolver import ACLResolver
 from app.compliance.audit_logger import AuditLogger
 from app.ingestion.embedder import Embedder
+from app.observability.langsmith_tracer import LangSmithTracer, hash_text, safe_error_category
 from app.search.answer_generator import AnswerGenerator
 from app.search.masker import ResponseMasker
 from app.search.reranker import Reranker
 from app.search.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
+_tracer = LangSmithTracer()
+
+MIN_RERANK_SCORE = 0.20
+
+
+def _record_step(state: Dict, step_name: str) -> Dict:
+    now = time.time()
+    previous = state.get("step_started_at", state.get("start_time", now))
+    timings = dict(state.get("step_timings_ms", {}))
+    timings[step_name] = int((now - previous) * 1000)
+    return {
+        "step_timings_ms": timings,
+        "step_started_at": now,
+    }
 
 
 class SearchState(TypedDict):
@@ -49,6 +64,12 @@ class SearchState(TypedDict):
     search_latency_ms: int      # retrieval + rerank + masking only
     answer_latency_ms: int      # answer generation only
     start_time: float
+    step_started_at: float
+    step_timings_ms: Dict[str, int]
+    candidate_count: int
+    reranked_count: int
+    masked_result_count: int
+    acl_label_count: int
 
 
 class SearchGraph:
@@ -102,8 +123,12 @@ class SearchGraph:
     @staticmethod
     def _normalize_query(state: SearchState) -> Dict:
         normalized = state["query_text"].strip().lower()
-        logger.debug("normalize_query: '%s' → '%s'", state["query_text"], normalized)
-        return {"normalized_query": normalized}
+        logger.debug(
+            "normalize_query: query_hash=%s length=%d",
+            hash_text(state["query_text"]),
+            len(state["query_text"]),
+        )
+        return {"normalized_query": normalized, **_record_step(state, "normalize_query")}
 
     @staticmethod
     def _resolve_acl(state: SearchState) -> Dict:
@@ -122,12 +147,16 @@ class SearchGraph:
 
         acl = ACLResolver.resolve_acl(state["db"], state["user_id"])
         logger.debug("resolve_acl user=%s role=%s acl=%s", state["user_id"], state["role"], acl)
-        return {"user_acl": acl}
+        return {
+            "user_acl": acl,
+            "acl_label_count": len(acl),
+            **_record_step(state, "resolve_acl"),
+        }
 
     def _embed_query(self, state: SearchState) -> Dict:
         embedding = self.embedder.embed_batch([state["normalized_query"]])[0]
         logger.debug("embed_query: %d-dim vector", len(embedding))
-        return {"query_embedding": embedding}
+        return {"query_embedding": embedding, **_record_step(state, "embed_query")}
 
     def _retrieve(self, state: SearchState) -> Dict:
         candidates = self.retriever.retrieve(
@@ -139,11 +168,14 @@ class SearchGraph:
         logger.debug("retrieve: %d candidates", len(candidates))
         for i, c in enumerate(candidates[:3]):
             logger.debug(
-                "  candidate[%d] id=%s rrf=%.5f text_preview=%s",
+                "  candidate[%d] id=%s rrf=%.5f",
                 i, c["_id"], c.get("rrf_score", 0),
-                c.get("_source", {}).get("text", "")[:80].replace("\n", " "),
             )
-        return {"candidates": candidates}
+        return {
+            "candidates": candidates,
+            "candidate_count": len(candidates),
+            **_record_step(state, "retrieve"),
+        }
 
     def _rerank(self, state: SearchState) -> Dict:
         reranked = self.reranker.rerank(
@@ -152,7 +184,24 @@ class SearchGraph:
             top_n=5,
         )
         logger.debug("rerank: top scores %s", [f"{r['rerank_score']:.4f}" for r in reranked])
-        return {"reranked": reranked}
+        
+        # Apply threshold filter
+        filtered = [r for r in reranked if r.get("rerank_score", 0) >= MIN_RERANK_SCORE]
+        if not filtered:
+            filtered = reranked[:1]  # Fallback to top 1 if none pass threshold
+        
+        logger.info(
+            "rerank threshold: kept %d/%d chunks (threshold=%.2f)",
+            len(filtered),
+            len(reranked),
+            MIN_RERANK_SCORE,
+        )
+        
+        return {
+            "reranked": filtered,
+            "reranked_count": len(filtered),
+            **_record_step(state, "rerank"),
+        }
 
     @staticmethod
     def _mask(state: SearchState) -> Dict:
@@ -160,15 +209,20 @@ class SearchGraph:
         for chunk in state["reranked"]:
             src = chunk.get("_source", {})
             phi_spans = src.get("phi_spans", [])
-            text = src.get("text", "")
-            masked_text = ResponseMasker.mask(text, phi_spans, state["role"])
+            # Use normalized_text for cleaner display if available; fall back to raw text
+            display_text = src.get("normalized_text") or src.get("text", "")
+            masked_text = ResponseMasker.mask(display_text, phi_spans, state["role"])
             masked_results.append({
                 "text": masked_text,
                 "doc_id": src.get("doc_id", ""),
                 "score": chunk.get("rerank_score", 0.0),
             })
         logger.debug("mask: %d results, role=%s", len(masked_results), state["role"])
-        return {"masked_results": masked_results}
+        return {
+            "masked_results": masked_results,
+            "masked_result_count": len(masked_results),
+            **_record_step(state, "mask"),
+        }
 
     def _generate_answer(self, state: SearchState) -> Dict:
         """
@@ -193,10 +247,13 @@ class SearchGraph:
             "answer_generation_status": status,
             "sources": sources,
             "search_latency_ms": search_latency_ms,
+            **_record_step(state, "generate_answer"),
         }
 
     @staticmethod
     def _respond(state: SearchState) -> Dict:
+        respond_step = _record_step(state, "respond")
+        step_timings_ms = respond_step["step_timings_ms"]
         latency_ms = int((time.time() - state["start_time"]) * 1000)
         search_latency_ms = state.get("search_latency_ms", latency_ms)
         answer_latency_ms = max(0, latency_ms - search_latency_ms)
@@ -221,10 +278,30 @@ class SearchGraph:
         except Exception as exc:
             logger.warning("Audit log failed (non-fatal): %s", exc)
 
+        try:
+            _tracer.trace_search(
+                query_text=state["query_text"],
+                role=state["role"],
+                doc_ids=doc_ids,
+                masking_applied=masking_label,
+                result_count=len(doc_ids),
+                search_latency_ms=search_latency_ms,
+                answer_latency_ms=answer_latency_ms,
+                total_latency_ms=latency_ms,
+                answer_status=state.get("answer_generation_status", "skipped"),
+                candidate_count=state.get("candidate_count", 0),
+                reranked_count=state.get("reranked_count", 0),
+                masked_result_count=state.get("masked_result_count", len(doc_ids)),
+                acl_label_count=state.get("acl_label_count", 0),
+                step_timings_ms=step_timings_ms,
+            )
+        except Exception as exc:
+            logger.warning("LangSmith trace failed (non-fatal): %s", exc)
+
         logger.info(
-            "search done query='%s' role=%s results=%d answer=%s "
+            "search done query_hash=%s role=%s results=%d answer=%s "
             "search=%dms answer=%dms total=%dms",
-            state["query_text"][:60],
+            hash_text(state["query_text"]),
             state["role"],
             len(doc_ids),
             state.get("answer_generation_status", "skipped"),
@@ -236,6 +313,7 @@ class SearchGraph:
             "latency_ms": latency_ms,
             "search_latency_ms": search_latency_ms,
             "answer_latency_ms": answer_latency_ms,
+            **respond_step,
         }
 
     # ------------------------------------------------------------------
@@ -244,6 +322,7 @@ class SearchGraph:
 
     def invoke(self, query_text: str, user_id: str, role: str, db: Any) -> Dict:
         """Execute the full search pipeline and return the final SearchState."""
+        start_time = time.time()
         initial: SearchState = {
             "query_text": query_text,
             "user_id": user_id,
@@ -261,6 +340,33 @@ class SearchGraph:
             "latency_ms": 0,
             "search_latency_ms": 0,
             "answer_latency_ms": 0,
-            "start_time": time.time(),
+            "start_time": start_time,
+            "step_started_at": start_time,
+            "step_timings_ms": {},
+            "candidate_count": 0,
+            "reranked_count": 0,
+            "masked_result_count": 0,
+            "acl_label_count": 0,
         }
-        return self._graph.invoke(initial)
+        try:
+            return self._graph.invoke(initial)
+        except Exception as exc:
+            latency_ms = int((time.time() - start_time) * 1000)
+            _tracer.trace_search(
+                query_text=query_text,
+                role=role,
+                doc_ids=[],
+                masking_applied="unknown",
+                result_count=0,
+                search_latency_ms=latency_ms,
+                answer_latency_ms=0,
+                total_latency_ms=latency_ms,
+                answer_status="failed",
+                candidate_count=0,
+                reranked_count=0,
+                masked_result_count=0,
+                acl_label_count=0,
+                step_timings_ms=initial.get("step_timings_ms", {}),
+                error_category=safe_error_category(exc),
+            )
+            raise

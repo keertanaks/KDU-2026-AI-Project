@@ -25,6 +25,9 @@ _MED_NAME_FIXES: Dict[str, str] = {
 }
 
 _FREQ_TRAILING_FOR = re.compile(r"\bas needed for\s*$", re.IGNORECASE)
+_FREQ_TRAILING_NEED = re.compile(r"\bas need\s*$", re.IGNORECASE)
+
+_GREETING_RE = re.compile(r"^(hi|hello|dear)\b", re.IGNORECASE)
 
 
 def _fix_med_name(name: str) -> str:
@@ -35,8 +38,9 @@ def _fix_med_name(name: str) -> str:
 
 
 def _fix_frequency(freq: str) -> str:
-    """Remove trailing 'for' left by a PDF line-break truncation."""
-    return _FREQ_TRAILING_FOR.sub("as needed", freq).strip()
+    freq = _FREQ_TRAILING_FOR.sub("as needed", freq)
+    freq = _FREQ_TRAILING_NEED.sub("as needed", freq)
+    return freq.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +61,7 @@ _INSTRUCTIONS_RE = re.compile(
     r"Patient Instructions?\s*:(.*?)(?:Prescribing Physician|Signature\s*:|Page \d)",
     re.DOTALL | re.IGNORECASE,
 )
-_HOSPITAL_RE = re.compile(r"^(.+Hospital[^\n]*)", re.IGNORECASE)
+_HOSPITAL_RE = re.compile(r"^(.+(Hospital|Clinic|Medical Center|Health[^\n]*?)(?:\s*\n|$))", re.IGNORECASE)
 
 
 def _extract_field(text: str, key: str) -> str:
@@ -66,8 +70,19 @@ def _extract_field(text: str, key: str) -> str:
 
 
 def _extract_hospital(text: str) -> str:
-    m = _HOSPITAL_RE.search(text)
-    return m.group(1).strip() if m else ""
+    """Extract facility name and address (e.g., 'Mayo Clinic Northwest, 654 Wellness Circle, ...')."""
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        m = _HOSPITAL_RE.search(line)
+        if m:
+            facility = line.strip()
+            # If next line looks like an address, include it
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and not next_line[0].isupper() and any(c.isdigit() for c in next_line):
+                    facility += ", " + next_line
+            return facility
+    return ""
 
 
 def _extract_instructions(text: str) -> List[str]:
@@ -76,20 +91,30 @@ def _extract_instructions(text: str) -> List[str]:
         return []
     body = m.group(1).strip()
 
-    # First pass: collect numbered instruction lines; join wrapped continuations
-    # (continuation = line that doesn't start with a digit and is not a greeting/sign-off)
     raw_lines = [l.strip() for l in body.splitlines() if l.strip()]
-    merged: List[str] = []
-    for line in raw_lines:
-        if line.lower().startswith(("hi ", "take care", "[your")):
-            continue
-        is_new = bool(re.match(r"^\d+\.", line))
-        if is_new or not merged:
-            merged.append(re.sub(r"^\d+\.\s*", "", line))
-        else:
-            # Continuation line — join to previous
-            merged[-1] = merged[-1].rstrip() + " " + line
-    return [l for l in merged if l]
+
+    has_numbered = any(re.match(r"^\d+\.", l) for l in raw_lines)
+
+    if has_numbered:
+        # Join wrapped continuation lines onto their numbered parent
+        merged: List[str] = []
+        for line in raw_lines:
+            if _GREETING_RE.match(line) or line.lower().startswith(("take care", "[your")):
+                continue
+            is_new = bool(re.match(r"^\d+\.", line))
+            if is_new or not merged:
+                merged.append(re.sub(r"^\d+\.\s*", "", line))
+            else:
+                merged[-1] = merged[-1].rstrip() + " " + line
+        return [l for l in merged if l]
+
+    # Unnumbered block — split on sentence boundaries (period/!/? followed by space+capital)
+    filtered = " ".join(
+        l for l in raw_lines
+        if not _GREETING_RE.match(l) and not l.lower().startswith(("take care", "[your"))
+    )
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", filtered)
+    return [s.strip() for s in sentences if s.strip()]
 
 
 # ---------------------------------------------------------------------------

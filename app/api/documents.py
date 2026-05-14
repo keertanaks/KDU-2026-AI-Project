@@ -3,7 +3,9 @@ import io
 import json
 import os
 import tempfile
+import time
 import uuid
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -24,10 +26,12 @@ from app.ingestion.indexer import Indexer
 from app.ingestion.extraction_validator import ExtractionValidator
 from app.ingestion.layout_extractor import LayoutExtractor
 from app.ingestion.normalizer import MedicalDocumentNormalizer
+from app.observability.langsmith_tracer import LangSmithTracer, safe_error_category
 from app.storage import get_storage_service
 from app.schemas.document import IngestResponse
 
 router = APIRouter()
+_tracer = LangSmithTracer()
 
 # Debug output root — created once at import time; dev-only, never committed
 _DEBUG_ROOT = Path(__file__).parent.parent.parent / "debug_outputs"
@@ -82,6 +86,23 @@ def _resolve_acl(request: Request) -> list:
         return ["admin_only"]
 
 
+def _chunk_char_stats(chunks: list) -> tuple:
+    lengths = [len(getattr(chunk, "child_text", "") or "") for chunk in chunks]
+    if not lengths:
+        return None, None, None
+    return min(lengths), max(lengths), round(sum(lengths) / len(lengths), 2)
+
+
+def _phi_type_counts(spans: list) -> dict:
+    counts = Counter()
+    for span in spans:
+        span_type = getattr(span, "span_type", None)
+        if not span_type and isinstance(span, dict):
+            span_type = span.get("type")
+        counts[str(span_type or "UNKNOWN")] += 1
+    return dict(counts)
+
+
 @router.post("/api/ingest", response_model=IngestResponse)
 async def ingest_document(request: Request, file: UploadFile = File(...)):
     """
@@ -93,17 +114,78 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
     → validate normalized text; keep whichever scores higher
     → chunk → PHI tag → embed → index
     """
+    trace_started_at = time.time()
+    step_started_at = trace_started_at
+    step_timings_ms = {}
+
+    def mark_step(step_name: str):
+        nonlocal step_started_at
+        now = time.time()
+        step_timings_ms[step_name] = int((now - step_started_at) * 1000)
+        step_started_at = now
+
+    def elapsed_ms() -> int:
+        return int((time.time() - trace_started_at) * 1000)
+
     if not file.filename.lower().endswith(".pdf"):
+        _tracer.trace_ingest(
+            filename=file.filename or "",
+            doc_id=None,
+            doc_type=None,
+            ocr_method=None,
+            ocr_success_rate=None,
+            raw_char_count=None,
+            cleaned_char_count=None,
+            normalization_applied=None,
+            quality_score=None,
+            needs_review=None,
+            table_count=None,
+            chunk_count=None,
+            chunk_char_min=None,
+            chunk_char_max=None,
+            chunk_char_avg=None,
+            phi_span_count=None,
+            phi_type_counts=None,
+            indexed_count=None,
+            latency_ms=elapsed_ms(),
+            step_timings_ms=step_timings_ms,
+            error_category="invalid_file_type",
+        )
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     # --- Layer 1: file fingerprint deduplication ---
     file_bytes = await file.read()
     file_hash = hashlib.sha256(file_bytes).hexdigest()
+    mark_step("read_upload")
 
     db = SessionLocal()
     try:
         existing = db.query(DocumentHash).filter_by(file_hash=file_hash).first()
         if existing:
+            mark_step("duplicate_check")
+            _tracer.trace_ingest(
+                filename=file.filename or "",
+                doc_id=existing.doc_id,
+                doc_type=None,
+                ocr_method=None,
+                ocr_success_rate=None,
+                raw_char_count=None,
+                cleaned_char_count=None,
+                normalization_applied=None,
+                quality_score=None,
+                needs_review=None,
+                table_count=None,
+                chunk_count=None,
+                chunk_char_min=None,
+                chunk_char_max=None,
+                chunk_char_avg=None,
+                phi_span_count=None,
+                phi_type_counts=None,
+                indexed_count=None,
+                latency_ms=elapsed_ms(),
+                step_timings_ms=step_timings_ms,
+                error_category="duplicate_document",
+            )
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -114,14 +196,26 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                     "ingested_at": existing.ingested_at.isoformat(),
                 },
             )
+        mark_step("duplicate_check")
     finally:
         db.close()
 
     doc_id = str(uuid.uuid4())
+    doc_type = None
+    raw_text = ""
+    clean_text = ""
+    ocr_result = {}
+    tables = []
+    chunks = []
+    all_phi_spans = []
+    raw_validation = {}
+    normalization_applied = False
+    indexed_count = None
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name
+    mark_step("write_temp_file")
 
     try:
         storage = get_storage_service()
@@ -131,9 +225,11 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             process_path = storage.get_local_path(doc_id)
         else:
             process_path = tmp_path
+        mark_step("storage_upload")
 
         # --- Classify (physical format: typed/scanned/handwritten) ----------
         doc_type, _meta = DocumentClassifier.classify(process_path)
+        mark_step("classify")
 
         # --- OCR / text extraction ------------------------------------------
         ocr_result = _get_ocr().extract_text(process_path, doc_type)
@@ -147,17 +243,21 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         else:
             ocr_debug = raw_text
         (_DEBUG_ROOT / "ocr" / f"{doc_id}.txt").write_text(ocr_debug, encoding="utf-8")
+        mark_step("ocr_extract")
 
         # --- Clean -------------------------------------------------------------
         clean_text = TextCleaner.clean(raw_text)
         (_DEBUG_ROOT / "cleaned" / f"{doc_id}.txt").write_text(clean_text, encoding="utf-8")
+        mark_step("clean_text")
 
         # --- Detect content type (prescription / lab / form / clinical note) --
         detected_chunk_type = AdaptiveChunker.detect_doc_type(clean_text)
         chunk_type_str = detected_chunk_type.value
+        mark_step("detect_content_type")
 
         # --- Validate raw extraction ------------------------------------------
         raw_validation = ExtractionValidator.validate(clean_text, chunk_type_str)
+        mark_step("validate_raw_extraction")
 
         # --- Layout / table extraction (typed PDFs only) ---------------------
         should_normalize = detected_chunk_type in (
@@ -168,6 +268,8 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             tables = LayoutExtractor.extract_tables(process_path)
             if tables:
                 should_normalize = True  # pdfplumber found tables → always normalize
+
+        mark_step("layout_extraction")
 
         # --- Normalization ---------------------------------------------------
         norm_result: dict = {
@@ -195,6 +297,8 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                     norm_result = candidate
                     normalization_applied = False
 
+        mark_step("normalize")
+
         final_text = norm_result["normalized_text"] if normalization_applied else clean_text
 
         (_DEBUG_ROOT / "normalized" / f"{doc_id}.txt").write_text(
@@ -210,14 +314,17 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             json.dumps([s.to_dict() for s in all_phi_spans], indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        mark_step("phi_tag")
 
         # --- Chunk final text -------------------------------------------------
         chunks = AdaptiveChunker.chunk(final_text, detected_chunk_type)
+        mark_step("chunk")
 
         # --- Embed ------------------------------------------------------------
         embedder = _get_embedder()
         child_texts = [c.child_text for c in chunks]
         embeddings = embedder.embed_batch(child_texts)
+        mark_step("embed")
 
         # --- Build index documents -------------------------------------------
         acl = _resolve_acl(request)
@@ -231,8 +338,8 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                 # Deterministic chunk ID: same file → same IDs → overwrites not duplicates
                 "chunk_id": hashlib.sha256(f"{file_hash}:{i}".encode()).hexdigest()[:32],
                 "doc_id": doc_id,
-                # text is always what gets searched — normalised Markdown when applied
-                "text": chunk.child_text,
+                # text is always what gets searched — full cleaned text preserves all content
+                "text": clean_text,
                 "raw_text": clean_text,
                 "normalized_text": norm_result["normalized_text"],
                 "normalized_format": norm_result.get("normalized_format", "plain"),
@@ -248,6 +355,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             }
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
         ]
+        mark_step("build_index_documents")
 
         (_DEBUG_ROOT / "chunks" / f"{doc_id}.json").write_text(
             json.dumps(
@@ -270,6 +378,7 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         )
 
         indexed_count = _get_indexer().index_chunks(index_docs)
+        mark_step("index")
 
         # --- Record fingerprint (only after successful indexing) -------------
         db = SessionLocal()
@@ -283,6 +392,58 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
             db.commit()
         finally:
             db.close()
+        mark_step("record_fingerprint")
+
+        chunk_char_min, chunk_char_max, chunk_char_avg = _chunk_char_stats(chunks)
+        _tracer.trace_ingest(
+            filename=file.filename or "",
+            doc_id=doc_id,
+            doc_type=str(doc_type.value) if doc_type else None,
+            ocr_method=ocr_result.get("method"),
+            ocr_success_rate=ocr_result.get("success_rate"),
+            raw_char_count=len(raw_text),
+            cleaned_char_count=len(clean_text),
+            normalization_applied=normalization_applied,
+            quality_score=raw_validation.get("quality_score"),
+            needs_review=raw_validation.get("needs_review"),
+            table_count=len(tables),
+            chunk_count=len(chunks),
+            chunk_char_min=chunk_char_min,
+            chunk_char_max=chunk_char_max,
+            chunk_char_avg=chunk_char_avg,
+            phi_span_count=len(all_phi_spans),
+            phi_type_counts=_phi_type_counts(all_phi_spans),
+            indexed_count=indexed_count,
+            latency_ms=elapsed_ms(),
+            step_timings_ms=step_timings_ms,
+        )
+
+    except Exception as exc:
+        chunk_char_min, chunk_char_max, chunk_char_avg = _chunk_char_stats(chunks)
+        _tracer.trace_ingest(
+            filename=file.filename or "",
+            doc_id=doc_id,
+            doc_type=str(doc_type.value) if doc_type else None,
+            ocr_method=ocr_result.get("method"),
+            ocr_success_rate=ocr_result.get("success_rate"),
+            raw_char_count=len(raw_text) if raw_text else None,
+            cleaned_char_count=len(clean_text) if clean_text else None,
+            normalization_applied=normalization_applied,
+            quality_score=raw_validation.get("quality_score"),
+            needs_review=raw_validation.get("needs_review"),
+            table_count=len(tables),
+            chunk_count=len(chunks),
+            chunk_char_min=chunk_char_min,
+            chunk_char_max=chunk_char_max,
+            chunk_char_avg=chunk_char_avg,
+            phi_span_count=len(all_phi_spans),
+            phi_type_counts=_phi_type_counts(all_phi_spans),
+            indexed_count=indexed_count,
+            latency_ms=elapsed_ms(),
+            step_timings_ms=step_timings_ms,
+            error_category=safe_error_category(exc),
+        )
+        raise
 
     finally:
         os.unlink(tmp_path)

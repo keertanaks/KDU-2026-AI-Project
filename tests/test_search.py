@@ -15,6 +15,10 @@ from app.search.masker import ResponseMasker
 from app.search.answer_generator import (
     _build_placeholder_context,
     _restore,
+    redact_placeholders,
+    _contains_phi_fragments,
+    _sanitize_remaining_fragments,
+    _extract_simple_answer,
     AnswerGenerator,
 )
 
@@ -271,6 +275,178 @@ class TestAnswerGeneratorSkipped:
 
 
 # ---------------------------------------------------------------------------
+# Placeholder Restoration — corruption handling (longest-first order)
+# ---------------------------------------------------------------------------
+
+class TestPlaceholderRestoration:
+    def test_restore_clean_placeholder(self):
+        """Restore a clean [[PHI_PERSON_1]] token to original value."""
+        mapping = {"[[PHI_PERSON_1]]": "Hannah Perez"}
+        text = "Patient name is [[PHI_PERSON_1]]."
+        result = _restore(text, mapping)
+        assert result == "Patient name is Hannah Perez."
+        assert "[[PHI_" not in result
+
+    def test_restore_longest_first_prevents_corruption(self):
+        """
+        Longest-first sorting prevents "Hanna[[PHI_DATE_TIME_1]]" corruption.
+        If [[PHI_PERSON_1]] was replaced after [[PHI_PERSON_11]], we'd corrupt the word.
+        """
+        mapping = {
+            "[[PHI_PERSON_1]]": "Hannah Perez",
+            "[[PHI_DATE_TIME_1]]": "2025-05-14",
+        }
+        # Simulate LLM output with both tokens
+        text = "[[PHI_PERSON_1]] was born on [[PHI_DATE_TIME_1]]."
+        result = _restore(text, mapping)
+        assert result == "Hannah Perez was born on 2025-05-14."
+        assert "[[PHI_" not in result
+        assert "Hannah Perez" in result  # Full name restored, not corrupted
+
+    def test_restore_skips_missing_tokens(self):
+        """If a token isn't in the text, skip it (don't add it)."""
+        mapping = {
+            "[[PHI_PERSON_1]]": "Hannah Perez",
+            "[[PHI_PERSON_2]]": "John Doe",  # Not in text
+        }
+        text = "Patient: [[PHI_PERSON_1]]"
+        result = _restore(text, mapping)
+        assert result == "Patient: Hannah Perez"
+        assert "John Doe" not in result
+
+    def test_restore_empty_mapping(self):
+        """Empty mapping should return text unchanged."""
+        text = "Some text with [[PHI_PERSON_1]]"
+        result = _restore(text, {})
+        assert result == text
+
+
+class TestPlaceholderCorruptionDetection:
+    def test_contains_phi_fragments_detects_orphaned_bracket(self):
+        """Detect [[PHI_ orphan fragments (LLM corruption)."""
+        assert _contains_phi_fragments("text [[PHI_") is True
+        assert _contains_phi_fragments("Hanna[[PHI_DATE_TIME_1]]") is True
+
+    def test_contains_phi_fragments_clean_text(self):
+        """Clean text with no PHI fragments."""
+        assert _contains_phi_fragments("Hannah Perez was born in 1990.") is False
+        assert _contains_phi_fragments("Patient: John <PERSON_REDACTED>") is False
+
+    def test_sanitize_removes_corrupted_placeholders(self):
+        """Convert corrupted/remaining placeholders to <TYPE_REDACTED>."""
+        # Input: LLM corrupted "Hannah" + leftover DATE_TIME placeholder
+        text = "Hanna[[PHI_DATE_TIME_1]]"
+        result = _sanitize_remaining_fragments(text)
+        assert "[[PHI_" not in result
+        assert "Hanna" in result  # Keep the word, redact the placeholder
+        assert "REDACTED" in result
+
+    def test_sanitize_orphaned_fragments(self):
+        """Clean up orphaned [[PHI_ fragments."""
+        text = "text [[PHI_ leftover"
+        result = _sanitize_remaining_fragments(text)
+        assert "[[PHI_" not in result
+        assert "REDACTED" in result
+
+
+class TestFallbackExtractor:
+    """Test simple answer extraction for common query patterns."""
+
+    def _make_prescription_chunk(self, patient="Hannah Perez", mrn="MRN100016", physician="Dr. Jonathan Hall") -> dict:
+        """Create a prescription chunk for testing."""
+        text = f"""# Prescription
+
+Patient: {patient}
+MRN: {mrn}
+Date: 2025-05-07
+Age: 30
+Diagnosis: Diabetes Type2 (ICD: E11)
+Prescribing Physician: {physician}
+
+## Medications
+
+| Medication | Dosage | Frequency |
+|---|---|---|
+| Metformin | 1000mg | 1 tablet twice daily |
+| Glipizide | 5mg | 1 tablet daily |
+| Januvia | 100mg | 1 tablet daily |"""
+        return {"_source": {"text": text, "normalized_text": text, "doc_id": "test-doc"}}
+
+    def test_extract_patient_for_medication_query(self):
+        """Pattern 1: 'Which patient was prescribed Metformin?'"""
+        chunk = self._make_prescription_chunk(patient="Hannah Perez")
+        query = "Which patient was prescribed Metformin 1000mg?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is not None
+        assert "Hannah Perez" in result
+        assert "Metformin" in result
+
+    def test_extract_medications_for_patient_query(self):
+        """Pattern 2: 'What medications was Hannah prescribed?'"""
+        chunk = self._make_prescription_chunk()
+        query = "What medications was Hannah Perez prescribed?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is not None
+        assert "Metformin" in result
+        assert "Glipizide" in result
+        assert "Januvia" in result
+
+    def test_extract_physician_for_prescriber_query(self):
+        """Pattern 3: 'Who prescribed Hannah's medication?'"""
+        chunk = self._make_prescription_chunk(physician="Dr. Jonathan Hall")
+        query = "Who prescribed Hannah Perez's medication?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is not None
+        assert "Dr. Jonathan Hall" in result
+
+    def test_extract_mrn_for_mrn_query(self):
+        """Pattern 4: 'What is the MRN for Hannah?'"""
+        chunk = self._make_prescription_chunk(mrn="MRN100016")
+        query = "What is the MRN for Hannah Perez?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is not None
+        assert "MRN100016" in result
+
+    def test_extract_returns_none_for_no_match(self):
+        """Non-matching query returns None."""
+        chunk = self._make_prescription_chunk()
+        query = "What is the weather today?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is None
+
+    def test_extract_returns_none_for_empty_chunk(self):
+        """Empty chunk returns None."""
+        query = "Which patient was prescribed Metformin?"
+        result = _extract_simple_answer(query, None)
+        assert result is None
+
+
+class TestRedactPlaceholdersNonTreating:
+    def test_redact_well_formed_person_placeholder(self):
+        """Convert [[PHI_PERSON_1]] to <PERSON_REDACTED>."""
+        text = "Patient name is [[PHI_PERSON_1]]."
+        result = redact_placeholders(text)
+        assert "[[PHI_" not in result
+        assert "<PERSON_REDACTED>" in result
+
+    def test_redact_multiple_placeholder_types(self):
+        """Redact mixed placeholder types."""
+        text = "[[PHI_PERSON_1]] born [[PHI_DATE_TIME_1]] at [[PHI_LOCATION_1]]"
+        result = redact_placeholders(text)
+        assert "[[PHI_" not in result
+        assert "<PERSON_REDACTED>" in result
+        assert "<DATE_TIME_REDACTED>" in result
+        assert "<LOCATION_REDACTED>" in result
+
+    def test_redact_orphaned_fragments(self):
+        """Redact remaining orphaned fragments after multi-pass."""
+        text = "text with [[PHI_ leftover"
+        result = redact_placeholders(text)
+        assert "[[PHI_" not in result
+        assert "REDACTED" in result
+
+
+# ---------------------------------------------------------------------------
 # AnswerGenerator — PHI safety: mapping cleared after generate()
 # ---------------------------------------------------------------------------
 
@@ -308,3 +484,79 @@ class TestAnswerGeneratorPhiSafety:
 
         assert status == "failed"
         assert answer == ""
+
+
+# ---------------------------------------------------------------------------
+# ResponseMasker — space handling around redactions
+# ---------------------------------------------------------------------------
+
+class TestResponseMaskerSpacing:
+    def test_space_added_before_redaction_if_preceded_by_alphanumeric(self):
+        """PERSON span after colon should get space before redaction."""
+        text = "Name:John Smith"
+        spans = [{"type": "PERSON", "start": 5, "end": 15, "confidence": 0.9}]
+        result = ResponseMasker.mask(text, spans, "non_treating_clinician")
+        # Colon is not alphanumeric, so no space added before redaction
+        assert result == "Name:<PERSON_REDACTED>"
+
+    def test_space_added_after_redaction_if_followed_by_alphanumeric(self):
+        """LOCATION span followed by zipcode should get space after redaction."""
+        text = "Cedar-Sinai33101"
+        spans = [{"type": "LOCATION", "start": 0, "end": 11, "confidence": 0.9}]
+        result = ResponseMasker.mask(text, spans, "non_treating_clinician")
+        # Should have space between redaction and zipcode (both alphanumeric neighbors)
+        assert result == "<LOCATION_REDACTED> 33101"
+
+    def test_no_double_space_if_span_surrounded_by_spaces(self):
+        """If spans are already separated by spaces, no extra spaces added."""
+        text = "Patient John Smith here"
+        spans = [{"type": "PERSON", "start": 8, "end": 18, "confidence": 0.9}]
+        result = ResponseMasker.mask(text, spans, "non_treating_clinician")
+        assert "Patient <PERSON_REDACTED> here" == result
+
+    def test_no_space_added_for_non_alphanumeric_neighbors(self):
+        """Redaction adjacent to punctuation should not add extra space."""
+        text = "Emily[123]"
+        spans = [{"type": "PERSON", "start": 0, "end": 5, "confidence": 0.9}]
+        result = ResponseMasker.mask(text, spans, "non_treating_clinician")
+        assert "<PERSON_REDACTED>[123]" == result
+
+
+# ---------------------------------------------------------------------------
+# AnswerGenerator — final role sanitizer for partial name removal
+# ---------------------------------------------------------------------------
+
+class TestFinalRoleSanitizer:
+    def test_treating_clinician_answer_unchanged(self):
+        """Treating clinician answers pass through unchanged."""
+        from app.search.answer_generator import _apply_final_role_sanitizer
+        answer = "Patient Hanna Smith with MRN100016 prescribed Metformin"
+        result = _apply_final_role_sanitizer(answer, "treating_clinician")
+        assert result == answer
+
+    def test_non_treating_removes_partial_name_before_redaction(self):
+        """Non-treating: partial names like 'Hanna<PERSON_REDACTED>' become just '<PERSON_REDACTED>'."""
+        from app.search.answer_generator import _apply_final_role_sanitizer
+        answer = "The patient is Hanna<PERSON_REDACTED>, age 30"
+        result = _apply_final_role_sanitizer(answer, "non_treating_clinician")
+        assert "Hanna<PERSON_REDACTED>" not in result
+        assert "<PERSON_REDACTED>" in result
+        # Should be like: "The patient is <PERSON_REDACTED>, age 30"
+
+    def test_non_treating_removes_multipart_names(self):
+        """Multi-word names before redaction tags should be fully removed."""
+        from app.search.answer_generator import _apply_final_role_sanitizer
+        answer = "Patients: Mia Ta<PERSON_REDACTED> and Dr. Sarah<PERSON_REDACTED>"
+        result = _apply_final_role_sanitizer(answer, "non_treating_clinician")
+        assert "Mia Ta<PERSON_REDACTED>" not in result
+        assert "Sarah<PERSON_REDACTED>" not in result
+        assert result.count("<PERSON_REDACTED>") == 2
+
+    def test_non_treating_redacts_mrn_patterns(self):
+        """MRN patterns like MRN100016 should become <MRN_REDACTED>."""
+        from app.search.answer_generator import _apply_final_role_sanitizer
+        answer = "Patient with MRN100016 and MRN100023"
+        result = _apply_final_role_sanitizer(answer, "non_treating_clinician")
+        assert "MRN100016" not in result
+        assert "MRN100023" not in result
+        assert result.count("<MRN_REDACTED>") == 2

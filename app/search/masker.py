@@ -58,7 +58,11 @@ class ResponseMasker:
             start = span.get("start", 0)
             end = span.get("end", 0)
             if span_type in mask_types and start < end <= len(text_list):
-                replacement = list(f"<{span_type}_REDACTED>")
+                # Add space before redaction tag if preceding char is alphanumeric
+                prefix_space = " " if start > 0 and text_list[start - 1].isalnum() else ""
+                # Add space after redaction tag if following char is alphanumeric
+                suffix_space = " " if end < len(text_list) and text_list[end].isalnum() else ""
+                replacement = list(f"{prefix_space}<{span_type}_REDACTED>{suffix_space}")
                 text_list[start:end] = replacement
 
         return "".join(text_list)

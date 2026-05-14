@@ -7,11 +7,13 @@ from presidio_analyzer import AnalyzerEngine
 # Post-filter allowlists — spans matching these are dropped after Presidio runs.
 # ---------------------------------------------------------------------------
 
-# Drug/medication names commonly misidentified as PERSON by Presidio.
+# Drug/medication names commonly misidentified as PERSON or LOCATION by Presidio.
+# Include common OCR truncations (e.g. "Salmet" for "Salmeterol").
 _MEDICATION_ALLOWLIST = {
     "albuterol",
     "fluticasone",
     "salmeterol",
+    "salmet",        # OCR truncation of salmeterol
     "montelukast",
     "gabapentin",
     "tramadol",
@@ -51,6 +53,12 @@ _DATE_FALSE_POSITIVES = {
     "noon",
 }
 
+# Dosing interval patterns: "4-6 hours", "every 6 hours", "q8h", etc.
+_DOSING_INTERVAL_RE = re.compile(
+    r"^(every\s+)?(\d+(-\d+)?)\s*(hours?|hrs?|minutes?|mins?|days?|weeks?)$",
+    re.IGNORECASE,
+)
+
 # ICD-10 code pattern — single letter followed by 2+ digits, e.g. J45, E11, R52.
 # Presidio sometimes tags these as LOCATION.
 _ICD_RE = re.compile(r"^[A-Z]\d{2}(\.\d+)?$")
@@ -61,7 +69,10 @@ def _is_medication(text: str) -> bool:
 
 
 def _is_date_false_positive(text: str) -> bool:
-    return text.strip().lower() in _DATE_FALSE_POSITIVES
+    t = text.strip()
+    if t.lower() in _DATE_FALSE_POSITIVES:
+        return True
+    return bool(_DOSING_INTERVAL_RE.match(t))
 
 
 def _is_icd_code(text: str) -> bool:
@@ -94,8 +105,8 @@ class PhiTagger:
         positives before returning spans.
 
         Post-filter rules (applied in order):
-          1. PERSON span whose text is a known medication name → drop.
-          2. DATE_TIME span whose text is a dosing/frequency word → drop.
+          1. PERSON or LOCATION span whose text is a known medication → drop.
+          2. DATE_TIME span whose text is a dosing/frequency word or interval → drop.
           3. LOCATION span whose text matches an ICD-10 code pattern → drop.
         """
         results = self.analyzer.analyze(text=text, language="en")
@@ -104,7 +115,7 @@ class PhiTagger:
         for r in results:
             matched = text[r.start:r.end]
 
-            if r.entity_type == "PERSON" and _is_medication(matched):
+            if r.entity_type in ("PERSON", "LOCATION") and _is_medication(matched):
                 continue
             if r.entity_type == "DATE_TIME" and _is_date_false_positive(matched):
                 continue

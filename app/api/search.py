@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
+from app.observability.langsmith_tracer import hash_text
 from app.schemas.query import SearchRequest, SearchResponse, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,12 @@ async def search(
             detail="Administrator role cannot perform searches.",
         )
 
-    logger.info("search request user=%s role=%s query='%s'", user_id, role_str, payload.query[:80])
+    logger.info(
+        "search request user=%s role=%s query_hash=%s",
+        user_id,
+        role_str,
+        hash_text(payload.query),
+    )
 
     graph = _get_search_graph()
 

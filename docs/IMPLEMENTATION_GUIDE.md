@@ -1610,7 +1610,7 @@ def test_chunker_clinical_note():
 - [ ] Session expiry works: Create session, wait > 8 hours (or manually set expiry to past), verify expired session rejected
 - [ ] Full smoke test: New user → login → upload 5 PDFs → search 3 queries → verify all results masked correctly per role
 - [ ] No console errors: Frontend dev tools show no JavaScript errors during full workflow
-- [ ] Final answer generation works when OPENAI_API_KEY is valid
+- [ ] Final answer generation works when OPENROUTER_API_KEY is valid
 - [ ] If OPENAI_API_KEY is invalid/missing, response returns retrieved masked chunks and answer_generation=skipped
 - [ ] Frontend displays generated answer, source doc_ids, and retrieved chunks
 - [ ] Treating clinician final answer restores placeholders only after LLM response
@@ -1649,6 +1649,546 @@ Implement AFTER you have:
 - [ ] No PHI in logs verified: Grep audit_logs for common PHI patterns (SSN, MRN numbers), verify none found
 - [ ] Document ACL enforced: Create docs with dept_cardiology ACL, query as non_matching role, verify 0 results
 - [ ] Cost baseline recorded: Note S3/KMS/OpenAI costs from first week of operation for future comparison
+````md
+## Phase 6 — Production Readiness & Deferred Blockers
+
+### Purpose
+Close the blocked/deferred items that are not part of Phase 5 evaluation.
+
+---
+
+### 6.1 Production Embedding Cutover
+- Fix `OPENAI_API_KEY`
+- Set `EMBEDDING_PROVIDER=openai`
+- Re-ingest all documents into `healthcare_chunks`
+- Verify 1536-d embeddings
+- Verify search works against production index
+
+---
+
+### 6.2 Real AWS S3 + KMS Cutover
+- Configure real S3 bucket
+- Configure customer-managed KMS key
+- Enable versioning + SSE-KMS
+- Run `scripts/verify_s3_kms.py`
+- Set `USE_LOCAL_STORAGE=false`
+- Verify `/api/ingest` uploads to S3
+
+---
+
+### 6.3 Frontend Completion
+
+#### Upload Permissions
+- `treating_clinician`: allowed to upload PDFs
+- `non_treating_clinician`: allowed to upload PDFs
+- `administrator`: allowed to upload PDFs
+- patients: unsupported / out of scope
+
+Important rule:
+
+- Upload permission does **not** imply search permission.
+- Administrators may upload records but must not receive normal clinical search content.
+- Administrator access remains limited to audit/admin views.
+
+#### Upload UI
+- Add PDF upload component to `SearchPage`
+- Add drag-and-drop or file-picker upload
+- Wire upload to existing `searchAPI.upload()`
+- Show ingest progress/loading state
+- Show ingestion result:
+  - `document_id`
+  - `chunks_created`
+  - detected document type
+  - OCR method used, if returned
+- Show upload errors clearly
+- Restrict upload UI to authenticated clinician/admin roles
+
+#### Audit Dashboard
+- Replace placeholder audit dashboard with real audit rows
+- Display:
+  - user ID
+  - role
+  - timestamp
+  - query hash
+  - document IDs returned
+  - masking applied
+  - result count
+  - latency
+- Do not display raw query text or PHI
+
+#### Search Result UI
+- Show generated answer
+- Show source doc IDs
+- Show retrieved chunks
+- Show latency
+- Show masking state
+
+---
+
+### 6.4 Production ACL Cleanup
+- Replace placeholder ACL labels with DB-driven department/document ACL
+- Remove testing-only admin content access
+- Verify administrator receives audit view only, not normal search content
+- Enforce upload and search permissions separately:
+
+```python
+UPLOAD_ALLOWED = {
+    UserRole.TREATING_CLINICIAN,
+    UserRole.NON_TREATING_CLINICIAN,
+    UserRole.ADMINISTRATOR,
+}
+
+SEARCH_ALLOWED = {
+    UserRole.TREATING_CLINICIAN,
+    UserRole.NON_TREATING_CLINICIAN,
+}
+````
+
+---
+
+### 6.5 Production Security Hardening
+
+* Enable HTTPS / TLS
+* Set secure cookies for production
+* Verify no PHI in backend logs, frontend state, debug outputs, audit logs
+* Add backup + restore verification
+* Optional: off-system/WORM audit export
+
+---
+
+### 6.6 Quality Gates
+
+* Run `black app/ --check`
+* Run `isort app/ --check`
+* Run `flake8 app/`
+* Run `mypy app/`
+* Run full `pytest tests/ -v`
+* Verify session expiry
+* Verify browser cookie persistence
+
+---
+
+### 6.7 OCR Migration — Replace PaddleOCR with Qianfan OCR
+
+#### Purpose
+
+Replace the Phase 2.1 handwritten OCR implementation with OpenRouter-hosted OCR model:
+
+```text
+baidu/qianfan-ocr-fast:free
+```
+
+#### Required Changes
+
+* Remove `paddleocr` from `requirements.txt`
+* Remove `paddlepaddle` from `requirements.txt`
+* Remove PaddleOCR initialization from `app/ingestion/ocr_worker.py`
+* Add env vars:
+
+  * `OPENROUTER_API_KEY`
+  * `OCR_MODEL=baidu/qianfan-ocr-fast:free`
+* Keep existing preprocessing pipeline:
+
+  * 300 DPI render
+  * bounding-box crop
+  * grayscale
+  * CLAHE
+  * sharpen
+  * deskew
+* Convert preprocessed page image to base64 PNG/JPEG
+* Send image to OpenRouter OCR model
+* Return extracted text only
+* Preserve existing `OCRWorker.extract_text()` interface so downstream ingestion remains unchanged
+
+#### Re-ingestion
+
+* Re-ingest all handwritten documents after migration
+* Compare before/after OCR quality
+* Verify retrieval quality unchanged or improved
+
+#### Security Validation
+
+* Verify OCR responses are never written to:
+
+  * audit logs
+  * frontend debug output
+  * OpenSearch metadata
+  * exception traces
+
+---
+
+## Exit Criteria
+
+| Check                                          | Result |
+| ---------------------------------------------- | ------ |
+| OpenAI production embeddings validated         | TBD    |
+| S3 + KMS live upload/download verified         | TBD    |
+| Upload permissions enforced for all 3 roles    | TBD    |
+| Upload UI works                                | TBD    |
+| Real audit dashboard works                     | TBD    |
+| DB-driven ACL enforced                         | TBD    |
+| Admin can upload PDFs                          | TBD    |
+| Admin cannot access normal search content      | TBD    |
+| HTTPS / secure cookies configured              | TBD    |
+| No PHI in logs/frontend/debug outputs          | TBD    |
+| Backup restore tested                          | TBD    |
+| Code quality checks pass                       | TBD    |
+| Full pytest suite passes                       | TBD    |
+| Session expiry tested                          | TBD    |
+| Cookie persistence tested                      | TBD    |
+| Qianfan OCR integration works                  | TBD    |
+| PaddleOCR fully removed                        | TBD    |
+| Handwritten documents re-ingested successfully | TBD    |
+| OCR quality regression check completed         | TBD    |
+
+```
+```
+````md
+### 6.8 LangSmith Observability Integration
+
+#### Purpose
+Add safe tracing and observability for ingestion and search pipelines without exposing PHI.
+
+This phase completes the observability requirement from the project specification.
+
+---
+
+#### Environment Variables
+
+Add to `config/.env`:
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=xxxxxxxx
+LANGSMITH_PROJECT=healthcare-rag
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+````
+
+---
+
+#### Required Changes
+
+Create:
+
+```text
+app/observability/langsmith_tracer.py
+```
+
+Implement:
+
+* `trace_search_step()`
+* `trace_ingestion_step()`
+* `safe_trace_metadata()`
+* `hash_trace_input()`
+
+---
+
+#### Integrate Tracing Into
+
+##### Search Pipeline
+
+Add tracing around:
+
+* query normalization
+* embedding generation
+* hybrid retrieval
+* reranking
+* masking
+* answer generation
+* total latency
+
+Files:
+
+```text
+app/search/graph.py
+app/api/search.py
+```
+
+---
+
+##### Ingestion Pipeline
+
+Add tracing around:
+
+* document classification
+* OCR execution
+* extraction validation
+* normalization
+* chunking
+* embedding generation
+* OpenSearch indexing
+
+Files:
+
+```text
+app/api/documents.py
+app/ingestion/*
+```
+
+---
+
+#### PHI Safety Rules
+
+LangSmith traces must NEVER contain:
+
+* raw query text containing PHI
+* raw retrieved chunks
+* unmasked patient data
+* OCR raw text
+* placeholder mappings
+* generated answers with restored PHI
+* uploaded document contents
+
+Only safe metadata may be traced.
+
+Example allowed trace payload:
+
+```json
+{
+  "query_hash": "sha256...",
+  "user_role": "treating_clinician",
+  "result_count": 5,
+  "doc_ids": ["doc_1", "doc_2"],
+  "latency_ms": 1180,
+  "masking_applied": true,
+  "answer_generation_status": "success"
+}
+```
+
+---
+
+#### Required Safety Behavior
+
+Before tracing:
+
+* hash sensitive query inputs
+* strip PHI
+* strip chunk text
+* strip placeholder mappings
+* strip OCR content
+
+Tracing must fail safely:
+
+* if LangSmith unavailable → pipeline continues
+* if API key missing → tracing disabled automatically
+
+---
+
+#### Exit Criteria
+
+| Check                                            | Result |
+| ------------------------------------------------ | ------ |
+| LangSmith traces visible in dashboard            | TBD    |
+| Search pipeline traced end-to-end                | TBD    |
+| Ingestion pipeline traced end-to-end             | TBD    |
+| Retrieval latency visible                        | TBD    |
+| OCR latency visible                              | TBD    |
+| Rerank latency visible                           | TBD    |
+| No raw PHI in traces                             | TBD    |
+| No raw query text in traces                      | TBD    |
+| No chunk text in traces                          | TBD    |
+| Placeholder mappings never traced                | TBD    |
+| Tracing disabled gracefully when API key missing | TBD    |
+
+---
+
+### 6.9 Final Success Criteria Validation
+
+#### Retrieval Quality Benchmark
+
+Run benchmark across golden dataset:
+
+* top-3 retrieval accuracy
+* rerank quality
+* citation correctness
+
+Target:
+
+```text
+Top-3 retrieval contains correct document >= 90%
+```
+
+---
+
+#### OCR Benchmark
+
+Measure OCR success rates separately:
+
+| Document Type    | Target |
+| ---------------- | ------ |
+| Typed PDFs       | >= 99% |
+| Scanned PDFs     | >= 95% |
+| Handwritten PDFs | >= 85% |
+
+---
+
+#### Compliance Validation
+
+Verify:
+
+* every query logged
+* query_hash stored instead of raw query
+* audit rows immutable
+* PHI masking correct for all roles
+* no PHI leakage in:
+
+  * logs
+  * traces
+  * frontend
+  * debug outputs
+  * OpenSearch metadata
+
+---
+
+#### Final Performance Benchmark
+
+Measure:
+
+* ingestion latency
+* retrieval latency
+* reranking latency
+* total search latency
+
+Target:
+
+```text
+P95 search latency < 1500ms
+```
+
+---
+
+#### Final Deliverable Validation
+
+Confirm system demonstrates:
+
+* mixed-format ingestion
+* OCR handling
+* hybrid semantic retrieval
+* reranking
+* PHI masking
+* role-aware access control
+* immutable audit logging
+* encrypted storage
+* LangSmith observability
+* production-safe tracing
+* frontend search workflow
+* citations/source display
+* answer generation
+
+```
+
+
+## Phase 7 — Patient Role Extension
+
+### Purpose
+Extend the system beyond the original clinician-facing scope by adding a limited patient role.
+
+Patients can upload their own medical PDFs, but they cannot search across hospital records or access other patients’ data.
+
+---
+
+### 7.1 Patient Role
+
+Add new role:
+
+```python
+class UserRole(str, enum.Enum):
+    TREATING_CLINICIAN = "treating_clinician"
+    NON_TREATING_CLINICIAN = "non_treating_clinician"
+    ADMINISTRATOR = "administrator"
+    PATIENT = "patient"
+````
+
+---
+
+### 7.2 Patient Upload Permission
+
+Patients are allowed to upload PDFs only for themselves.
+
+```python
+UPLOAD_ALLOWED = {
+    UserRole.TREATING_CLINICIAN,
+    UserRole.NON_TREATING_CLINICIAN,
+    UserRole.ADMINISTRATOR,
+    UserRole.PATIENT,
+}
+```
+
+Rules:
+
+* Patient uploads must be tagged with that patient’s own `patient_id`
+* Patient cannot choose another `patient_id`
+* Patient-uploaded documents get ACL like:
+
+```python
+acl = [f"patient_{user.patient_id}"]
+```
+
+---
+
+### 7.3 Patient Search Permission
+
+Patients may only search their own uploaded documents.
+
+```python
+SEARCH_ALLOWED = {
+    UserRole.TREATING_CLINICIAN,
+    UserRole.NON_TREATING_CLINICIAN,
+    UserRole.PATIENT,
+}
+```
+
+Patient ACL:
+
+```python
+if user.role == UserRole.PATIENT:
+    return [f"patient_{user.patient_id}"]
+```
+
+---
+
+### 7.4 Patient UI
+
+Add patient-facing page:
+
+* Upload PDF
+* View upload status
+* Search only own documents
+* See own results unmasked
+* No audit dashboard access
+* No cross-patient search
+
+---
+
+### 7.5 Security Rules
+
+* Patient cannot upload on behalf of others
+* Patient cannot access clinician/admin routes
+* Patient cannot see audit dashboard
+* Patient search must always use `patient_<patient_id>` ACL pre-filter
+* Every patient upload/search is audit logged
+* No patient-controlled metadata should override server-side ACL
+
+---
+
+### 7.6 Exit Criteria
+
+| Check                                           | Result |
+| ----------------------------------------------- | ------ |
+| Patient role added to DB enum/model             | TBD    |
+| Patient user can log in                         | TBD    |
+| Patient can upload PDF                          | TBD    |
+| Patient upload tagged with own patient_id       | TBD    |
+| Patient cannot choose another patient_id        | TBD    |
+| Patient can search own documents                | TBD    |
+| Patient cannot search other patients’ documents | TBD    |
+| Patient cannot access audit dashboard           | TBD    |
+| Patient upload/search audit logged              | TBD    |
+| Clinician/admin behavior unchanged              | TBD    |
+
+```
+
+
 
 ---
 

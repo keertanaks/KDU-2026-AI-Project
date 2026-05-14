@@ -39,7 +39,13 @@
       "Bash(Start-Sleep *)",
       "Bash(Invoke-WebRequest *)",
       "Bash(\"venv\\\\Scripts\\\\pip\" install *)",
-      "Bash('venv\\\\Scripts\\\\python' -c ' *)"
+      "Bash('venv\\\\Scripts\\\\python' -c ' *)",
+      "Bash(\"venv\\\\Scripts\\\\python\" -m uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "PowerShell(Invoke-RestMethod -Method POST -Uri \"http://localhost:8000/api/auth/login\" -ContentType \"application/json\" -Body '{\"username\":\"dr_smith\",\"password\":\"test_pass_treating\"}' -SessionVariable sess 2>&1)",
+      "PowerShell($r = Invoke-WebRequest -Method POST -Uri \"http://localhost:8000/api/auth/login\" -ContentType \"application/json\" -Body '{\"username\":\"dr_smith\",\"password\":\"test_pass_treating\"}'; Write-Host \"Status:\" $r.StatusCode; Write-Host \"Body:\" $r.Content)",
+      "PowerShell(New-Item -ItemType Directory -Force C:\\\\tmp)",
+      "PowerShell(curl.exe -s -c C:\\\\tmp\\\\cookies.txt -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" --data-raw '{\"username\":\"dr_smith\",\"password\":\"test_pass_treating\"}')",
+      "Bash(grep -E \"\\\\.\\(jsx|py\\)$\")"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -50,7 +56,10 @@
       "Bash(DROP TABLE *)",
       "Bash(format *)"
     ],
-    "defaultMode": "bypassPermissions"
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "C:\\"
+    ]
   },
   "skipDangerousModePermissionPrompt": true
 }

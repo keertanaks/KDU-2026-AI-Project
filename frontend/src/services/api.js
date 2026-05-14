@@ -13,7 +13,11 @@ export const searchAPI = {
     const formData = new FormData();
     formData.append('file', file);
     return apiClient.post('/ingest', formData);
-  }
+  },
+};
+
+export const auditAPI = {
+  list: (limit = 100) => apiClient.get('/audit', { params: { limit } }),
 };
 
 export const authAPI = {

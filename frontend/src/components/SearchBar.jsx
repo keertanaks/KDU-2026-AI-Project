@@ -9,17 +9,17 @@ export default function SearchBar({ onSearch }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row">
       <input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search medical records..."
-        className="flex-1 border border-gray-300 rounded px-4 py-2 focus:outline-none focus:border-blue-500"
+        className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
       />
       <button
         type="submit"
-        className="bg-blue-600 text-white px-6 py-2 rounded font-medium hover:bg-blue-700"
+        className="min-h-11 rounded-lg bg-sky-700 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-800 focus:outline-none focus:ring-4 focus:ring-sky-100"
       >
         Search
       </button>
