@@ -1,7 +1,7 @@
 export default function MaskingIndicator({ text }) {
   if (!text || !text.includes('_REDACTED>')) return null;
   return (
-    <span className="inline-block mt-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+    <span className="mt-3 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
       PHI masked
     </span>
   );

@@ -16,9 +16,8 @@ sentence-transformers
 pillow
 opencv-python-headless
 pytesseract
-paddleocr==2.9.1
-paddlepaddle==2.6.2
 pymupdf
+pdfplumber
 langchain-text-splitters
 onnxruntime
 presidio-analyzer

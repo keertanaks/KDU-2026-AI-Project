@@ -4,19 +4,26 @@ export default function ResultsList({ results }) {
   if (!results || results.length === 0) return null;
 
   return (
-    <div className="space-y-4">
-      {results.map((result, index) => (
-        <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs text-gray-500">Doc: {result.doc_id}</span>
-            <span className="text-xs text-gray-500">
-              Score: {result.score != null ? result.score.toFixed(3) : '—'}
-            </span>
-          </div>
-          <p className="text-gray-800 text-sm">{result.text}</p>
-          <MaskingIndicator text={result.text} />
-        </div>
-      ))}
-    </div>
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Retrieved Chunks ({results.length})
+      </h2>
+      <div className="space-y-3">
+        {results.map((result, index) => (
+          <article key={index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <span className="max-w-full truncate rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">
+                {result.doc_id || '-'}
+              </span>
+              <span className="w-fit rounded-full border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500">
+                score {result.score != null ? result.score.toFixed(3) : '-'}
+              </span>
+            </div>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{result.text}</p>
+            <MaskingIndicator text={result.text} />
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }

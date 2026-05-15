@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
@@ -13,7 +13,11 @@ export const searchAPI = {
     const formData = new FormData();
     formData.append('file', file);
     return apiClient.post('/ingest', formData);
-  }
+  },
+};
+
+export const auditAPI = {
+  list: (limit = 100) => apiClient.get('/audit', { params: { limit } }),
 };
 
 export const authAPI = {

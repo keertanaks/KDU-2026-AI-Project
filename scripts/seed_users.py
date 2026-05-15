@@ -20,7 +20,7 @@ SEED_USERS = [
         "department": "cardiology",
     },
     {
-        "username": "dr_jones",
+        "username": "research_analyst",
         "password": "test_pass_nontreating",
         "role": UserRole.NON_TREATING_CLINICIAN,
         "department": "research",
@@ -38,10 +38,34 @@ def seed():
     db = SessionLocal()
     created = 0
     try:
+        old_nontreating = db.query(User).filter_by(username="dr_jones").first()
+        existing_research = db.query(User).filter_by(username="research_analyst").first()
+        if existing_research:
+            existing_research.password_hash = AuthService.hash_password("test_pass_nontreating")
+            existing_research.role = UserRole.NON_TREATING_CLINICIAN
+            existing_research.department = "research"
+            existing_research.is_active = True
+            if old_nontreating and old_nontreating.user_id != existing_research.user_id:
+                old_nontreating.username = f"dr_jones_legacy_{old_nontreating.user_id[:8]}"
+                old_nontreating.is_active = False
+                print("  Archived old user 'dr_jones'.")
+        elif old_nontreating:
+            old_nontreating.username = "research_analyst"
+            old_nontreating.password_hash = AuthService.hash_password("test_pass_nontreating")
+            old_nontreating.role = UserRole.NON_TREATING_CLINICIAN
+            old_nontreating.department = "research"
+            old_nontreating.is_active = True
+            print("  Renamed user 'dr_jones' to 'research_analyst'.")
+        db.flush()
+
         for u in SEED_USERS:
             existing = db.query(User).filter_by(username=u["username"]).first()
             if existing:
-                print(f"  User '{u['username']}' already exists — skipping.")
+                existing.password_hash = AuthService.hash_password(u["password"])
+                existing.role = u["role"]
+                existing.department = u["department"]
+                existing.is_active = True
+                print(f"  User '{u['username']}' already exists - updated.")
                 continue
             user = User(
                 user_id=str(uuid.uuid4()),
