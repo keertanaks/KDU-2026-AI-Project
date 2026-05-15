@@ -17,8 +17,11 @@ from app.search.answer_generator import (
     _restore,
     redact_placeholders,
     _contains_phi_fragments,
+    _contains_unmapped_phi_fragments,
     _sanitize_remaining_fragments,
     _extract_simple_answer,
+    _filter_chunks_for_explicit_evidence,
+    select_chunk_text,
     AnswerGenerator,
 )
 
@@ -332,6 +335,15 @@ class TestPlaceholderCorruptionDetection:
         assert _contains_phi_fragments("Hannah Perez was born in 1990.") is False
         assert _contains_phi_fragments("Patient: John <PERSON_REDACTED>") is False
 
+    def test_exact_mapped_placeholder_is_not_corruption(self):
+        """Well-formed mapped placeholders are valid restore/redact targets."""
+        mapping = {"[[PHI_PERSON_1]]": "Hannah Perez"}
+        assert _contains_unmapped_phi_fragments("Patient is [[PHI_PERSON_1]].", mapping) is False
+
+    def test_unmapped_placeholder_fragment_is_corruption(self):
+        mapping = {"[[PHI_PERSON_1]]": "Hannah Perez"}
+        assert _contains_unmapped_phi_fragments("Patient is [[PHI_PERSON_2]].", mapping) is True
+
     def test_sanitize_removes_corrupted_placeholders(self):
         """Convert corrupted/remaining placeholders to <TYPE_REDACTED>."""
         # Input: LLM corrupted "Hannah" + leftover DATE_TIME placeholder
@@ -419,6 +431,89 @@ Prescribing Physician: {physician}
         query = "Which patient was prescribed Metformin?"
         result = _extract_simple_answer(query, None)
         assert result is None
+
+    def test_extract_ignores_rejected_normalized_text(self):
+        """Handwritten docs may have debug-only normalized text that must not win."""
+        chunk = {
+            "_source": {
+                "text": "Mr. Sachin\nTab. Augmentin 625mg\n1 - 0 - 1 x 5 days",
+                "normalized_text": "# Prescription\n\n",
+                "normalization_applied": False,
+                "doc_id": "handwritten-doc",
+            }
+        }
+        query = "Which patient was prescribed Augmentin 625mg?"
+        result = _extract_simple_answer(query, chunk)
+        assert result is not None
+        assert "Mr. Sachin" in result
+        assert "Augmentin 625mg" in result
+        assert "# Prescription" not in result
+
+
+class TestChunkTextSelection:
+    def test_selects_raw_text_when_normalization_was_rejected(self):
+        src = {
+            "text": "Mr. Sachin\nTab. Augmentin 625mg\n1 - 0 - 1 x 5 days",
+            "normalized_text": "# Prescription\n\n",
+            "normalization_applied": False,
+        }
+
+        assert "Augmentin 625mg" in select_chunk_text(src)
+        assert select_chunk_text(src).strip() != "# Prescription"
+
+    def test_selects_normalized_text_when_normalization_was_applied(self):
+        src = {
+            "text": "raw text",
+            "normalized_text": "# Prescription\n\nPatient: Test",
+            "normalization_applied": True,
+        }
+
+        assert select_chunk_text(src) == "# Prescription\n\nPatient: Test"
+
+
+class TestExplicitEvidenceFiltering:
+    def _chunk(self, doc_id, text):
+        return {
+            "_source": {
+                "doc_id": doc_id,
+                "text": text,
+                "normalized_text": text,
+                "normalization_applied": True,
+                "phi_spans": [],
+            }
+        }
+
+    def test_filters_to_chunks_that_explicitly_contain_requested_medication(self):
+        chunks = [
+            self._chunk("doc-metformin", "Medication: Metformin 500mg twice daily"),
+            self._chunk("doc-glimepiride", "Medication: Glimepiride 2mg daily"),
+        ]
+
+        filtered, terms, applied = _filter_chunks_for_explicit_evidence(
+            "Which diabetes prescriptions mention Metformin?",
+            chunks,
+        )
+
+        assert applied is True
+        assert terms == ["Metformin"]
+        assert [c["_source"]["doc_id"] for c in filtered] == ["doc-metformin"]
+
+    def test_answer_sources_exclude_related_nonmatching_chunks_when_llm_skipped(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-placeholder")
+        chunks = [
+            self._chunk("doc-metformin", "Medication: Metformin 500mg twice daily"),
+            self._chunk("doc-glimepiride", "Medication: Glimepiride 2mg daily"),
+        ]
+
+        answer, status, sources = AnswerGenerator().generate(
+            "Which diabetes prescriptions mention Metformin?",
+            chunks,
+            "treating_clinician",
+        )
+
+        assert answer == ""
+        assert status == "skipped"
+        assert sources == ["doc-metformin"]
 
 
 class TestRedactPlaceholdersNonTreating:

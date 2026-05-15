@@ -81,12 +81,12 @@ if __name__ == "__main__":
     all_latencies.extend(lats)
 
     # Non-treating clinician — should see masked text
-    lats = run_queries("dr_jones", "test_pass_nontreating", "non_treating_clinician")
+    lats = run_queries("research_analyst", "test_pass_nontreating", "non_treating_clinician")
     all_latencies.extend(lats)
 
     # Masking comparison
     check_masking("dr_smith", "test_pass_treating", "treating_clinician (unmasked)")
-    check_masking("dr_jones", "test_pass_nontreating", "non_treating_clinician (masked)")
+    check_masking("research_analyst", "test_pass_nontreating", "non_treating_clinician (masked)")
 
     # Overall P95
     all_latencies.sort()

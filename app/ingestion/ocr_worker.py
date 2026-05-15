@@ -123,9 +123,13 @@ class OCRWorker:
                                     {
                                         "type": "text",
                                         "text": (
-                                            "Extract all handwritten text from the supplied image. "
-                                            "Return only the recognized text, preserving line breaks. "
-                                            "Do not add any extra explanation or metadata."
+                                            "You are a medical document transcription specialist. "
+                                            "Extract every word from this handwritten or scanned medical document exactly as written. "
+                                            "Preserve all medical terms, drug names, dosages, lab values, dates, patient identifiers, "
+                                            "section headers, and abbreviations precisely. "
+                                            "Maintain the original line breaks and paragraph structure. "
+                                            "Do not correct spelling, do not summarise, do not add commentary. "
+                                            "Output only the transcribed text."
                                         ),
                                     },
                                     {

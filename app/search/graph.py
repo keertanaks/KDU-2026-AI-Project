@@ -24,7 +24,7 @@ from app.compliance.acl_resolver import ACLResolver
 from app.compliance.audit_logger import AuditLogger
 from app.ingestion.embedder import Embedder
 from app.observability.langsmith_tracer import LangSmithTracer, hash_text, safe_error_category
-from app.search.answer_generator import AnswerGenerator
+from app.search.answer_generator import AnswerGenerator, select_chunk_text
 from app.search.masker import ResponseMasker
 from app.search.reranker import Reranker
 from app.search.retriever import HybridRetriever
@@ -209,8 +209,7 @@ class SearchGraph:
         for chunk in state["reranked"]:
             src = chunk.get("_source", {})
             phi_spans = src.get("phi_spans", [])
-            # Use normalized_text for cleaner display if available; fall back to raw text
-            display_text = src.get("normalized_text") or src.get("text", "")
+            display_text = select_chunk_text(src)
             masked_text = ResponseMasker.mask(display_text, phi_spans, state["role"])
             masked_results.append({
                 "text": masked_text,

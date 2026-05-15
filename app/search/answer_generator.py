@@ -61,6 +61,42 @@ _REDACT_PATTERNS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\[\[PHI_\w+_\d+\]\]", re.IGNORECASE), "<PHI_REDACTED>"),
 ]
 
+_EXPLICIT_EVIDENCE_STOPWORDS = {
+    "which",
+    "what",
+    "where",
+    "when",
+    "who",
+    "patient",
+    "patients",
+    "prescription",
+    "prescriptions",
+    "document",
+    "documents",
+    "record",
+    "records",
+    "mention",
+    "mentions",
+    "mentioned",
+    "contain",
+    "contains",
+    "include",
+    "includes",
+    "included",
+    "prescribed",
+    "diabetes",
+    "asthma",
+    "depression",
+    "abnormal",
+    "pain",
+    "medication",
+    "medications",
+    "dosage",
+    "frequency",
+    "listed",
+    "each",
+}
+
 
 def _prefix(entity_type: str) -> str:
     return _TYPE_PREFIX.get(entity_type, "PHI")
@@ -75,6 +111,86 @@ def _deserialize_spans(phi_raw) -> List[Dict]:
     else:
         spans = phi_raw
     return spans if isinstance(spans, list) else []
+
+
+def select_chunk_text(src: Dict) -> str:
+    """
+    Choose the safest useful text for display/fallback extraction.
+
+    Normalized markdown is only preferred when the ingestion pipeline marked it
+    as accepted. Some handwritten prescriptions keep a debug-only normalized
+    value such as "# Prescription" while indexing the real OCR text; those must
+    fall back to text/raw_text.
+    """
+    normalized_text = (src.get("normalized_text") or "").strip()
+    if src.get("normalization_applied") is True and normalized_text:
+        return normalized_text
+    return src.get("text") or src.get("raw_text") or normalized_text
+
+
+def _source_doc_ids(chunks: List[Dict]) -> List[str]:
+    sources = [c.get("_source", {}).get("doc_id", "") for c in chunks]
+    return [s for s in sources if s]
+
+
+def _is_explicit_evidence_query(query: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(mention|mentions|mentioned|contain|contains|include|includes|prescribed)\b",
+            query,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _extract_explicit_evidence_terms(query: str) -> List[str]:
+    """
+    Extract concrete terms that should be present in evidence chunks.
+
+    This is intentionally conservative: it focuses on capitalized medication or
+    brand-like tokens, skipping broad clinical categories such as Diabetes.
+    """
+    if not _is_explicit_evidence_query(query):
+        return []
+
+    terms: List[str] = []
+    for token in re.findall(r"\b[A-Z][A-Za-z0-9-]{2,}\b", query):
+        if token.lower() in _EXPLICIT_EVIDENCE_STOPWORDS:
+            continue
+        if token not in terms:
+            terms.append(token)
+    return terms
+
+
+def _filter_chunks_for_explicit_evidence(
+    query: str,
+    chunks: List[Dict],
+) -> Tuple[List[Dict], List[str], bool]:
+    """
+    For lookup-style questions, keep only chunks explicitly containing the
+    requested medication/entity terms. This prevents the answer LLM from
+    including related-but-non-evidentiary chunks "for completeness".
+    """
+    terms = _extract_explicit_evidence_terms(query)
+    if not terms:
+        return chunks, [], False
+
+    filtered: List[Dict] = []
+    lowered_terms = [term.lower() for term in terms]
+    for chunk in chunks:
+        text = select_chunk_text(chunk.get("_source", {})).lower()
+        if all(term in text for term in lowered_terms):
+            filtered.append(chunk)
+
+    return filtered, terms, True
+
+
+def _no_explicit_evidence_answer(terms: List[str]) -> str:
+    joined = ", ".join(terms) if terms else "the requested term"
+    return (
+        "The retrieved context does not contain an explicit mention of "
+        f"{joined}. Related retrieved documents were excluded from the answer."
+    )
 
 
 def _build_placeholder_context(
@@ -152,6 +268,21 @@ def _contains_phi_fragments(text: str) -> bool:
     return bool(re.search(r"\[\[PHI_|(?<![A-Za-z0-9_])PHI_[A-Z_]+_\d+", text))
 
 
+def _contains_unmapped_phi_fragments(text: str, mapping: Dict[str, str]) -> bool:
+    """
+    Detect PHI placeholder corruption while allowing exact mapped placeholders.
+
+    A valid LLM answer may contain tokens such as [[PHI_PERSON_1]] that we can
+    restore for treating clinicians or redact for non-treating users. That is
+    not corruption. Corruption is any remaining PHI-looking fragment after all
+    known exact tokens have been removed.
+    """
+    remaining = text
+    for token in sorted(mapping, key=len, reverse=True):
+        remaining = remaining.replace(token, "")
+    return _contains_phi_fragments(remaining)
+
+
 def _sanitize_remaining_fragments(text: str) -> str:
     """
     Clean up any remaining malformed PHI fragments after attempted restoration.
@@ -182,7 +313,7 @@ def _get_chunk_for_role(chunk: Dict, role: str) -> Dict:
 
     # For non_treating: mask the chunk before extraction
     src = chunk.get("_source", {})
-    text = src.get("normalized_text", "") or src.get("text", "")
+    text = select_chunk_text(src)
     phi_spans = src.get("phi_spans", [])
 
     # Mask PHI in the chunk text using ResponseMasker
@@ -240,7 +371,7 @@ def _extract_simple_answer(query: str, chunk: Dict, role: str = "treating_clinic
         return None
 
     src = chunk.get("_source", {})
-    text = src.get("normalized_text", "") or src.get("text", "")
+    text = select_chunk_text(src)
 
     if not text:
         return None
@@ -281,7 +412,79 @@ def _extract_simple_answer(query: str, chunk: Dict, role: str = "treating_clinic
             mrn = mrn_match.group(1).strip()
             return f"The MRN is {mrn}."
 
+    handwritten_answer = _extract_handwritten_prescription_answer(query, text)
+    if handwritten_answer:
+        return handwritten_answer
+
     return None
+
+
+def _extract_handwritten_prescription_answer(query: str, text: str) -> Optional[str]:
+    """
+    Concise fallback for short handwritten prescriptions that do not have
+    normalized "Patient:" fields.
+    """
+    query_lower = query.lower()
+    if "prescribed" not in query_lower and "prescription" not in query_lower:
+        return None
+
+    patient = _extract_handwritten_patient_name(text)
+    medication_line = _find_best_medication_line(query, text)
+
+    if not patient or not medication_line:
+        return None
+
+    if "which patient" in query_lower or "who" in query_lower:
+        return f"{patient} was prescribed {medication_line}."
+
+    return f"The prescription lists {medication_line} for {patient}."
+
+
+def _extract_handwritten_patient_name(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        stripped = line.strip(" .")
+        match = re.match(
+            r"^(Mr|Mrs|Ms|Miss|Master|Mstr)\.?\s+([A-Za-z][A-Za-z .'-]{1,60})$",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            title = match.group(1).title()
+            name = " ".join(match.group(2).split())
+            return f"{title}. {name}"
+    return None
+
+
+def _find_best_medication_line(query: str, text: str) -> Optional[str]:
+    query_terms = {
+        term.lower()
+        for term in re.findall(r"[A-Za-z][A-Za-z0-9-]*|\d+(?:mg|ml)?", query)
+        if len(term) >= 3
+    }
+    if not query_terms:
+        return None
+
+    lines = [line.strip() for line in text.splitlines()]
+    best_index = None
+    best_score = 0
+
+    for index, line in enumerate(lines):
+        line_lower = line.lower()
+        score = sum(1 for term in query_terms if term in line_lower)
+        if score > best_score:
+            best_score = score
+            best_index = index
+
+    if best_index is None or best_score == 0:
+        return None
+
+    parts = [lines[best_index]]
+    if best_index + 1 < len(lines):
+        next_line = lines[best_index + 1].strip()
+        if re.search(r"\d+\s*-\s*\d+\s*-\s*\d+|x\s*\d+\s*days?|od|bd|tds|qid", next_line, re.IGNORECASE):
+            parts.append(next_line)
+
+    return " ".join(part for part in parts if part).strip()
 
 
 def _restore(text: str, mapping: Dict[str, str]) -> str:
@@ -332,18 +535,21 @@ class AnswerGenerator:
           - treating_clinician  → placeholders restored to original values
           - all other roles     → placeholders replaced with <TYPE_REDACTED>
         """
-        sources = [
-            c.get("_source", {}).get("doc_id", "")
-            for c in reranked_chunks
-        ]
-        sources = [s for s in sources if s]
+        answer_chunks, evidence_terms, evidence_filter_applied = _filter_chunks_for_explicit_evidence(
+            query,
+            reranked_chunks,
+        )
+        sources = _source_doc_ids(answer_chunks)
+
+        if evidence_filter_applied and not answer_chunks:
+            return _no_explicit_evidence_answer(evidence_terms), "success", []
 
         api_key = os.getenv("OPENROUTER_API_KEY", "")
         if not api_key or "placeholder" in api_key or api_key.startswith("sk-or-v1-xxx"):
             logger.info("OpenRouter key not configured — answer generation skipped")
             return "", "skipped", sources
 
-        context, mapping = _build_placeholder_context(reranked_chunks)
+        context, mapping = _build_placeholder_context(answer_chunks)
 
         try:
             from openai import OpenAI  # noqa: PLC0415
@@ -356,8 +562,11 @@ class AnswerGenerator:
 
             system_msg = (
                 "You are a medical records assistant. "
-                "Answer the question directly and confidently using the provided context. "
-                "Extract and present facts, patient details, diagnoses, and medications exactly as they appear. "
+                "Answer only using facts explicitly present in the provided context. "
+                "Do not infer typical treatments, common medications, likely diagnoses, or related clinical facts. "
+                "If the question asks which documents mention a medication or entity, include only context chunks "
+                "that explicitly contain that requested medication or entity. "
+                "Do not include related chunks for completeness. "
                 "Only decline to answer if the context truly contains NO relevant information whatsoever. "
                 "IMPORTANT: The context contains placeholders like [[PHI_PERSON_1]], "
                 "[[PHI_LOCATION_1]], [[PHI_DATE_TIME_1]] etc. "
@@ -377,19 +586,20 @@ class AnswerGenerator:
             )
             answer = response.choices[0].message.content or ""
 
-            # EARLY corruption detection (before any restoration/redaction)
-            has_corruption = _contains_phi_fragments(answer)
+            # EARLY corruption detection (before any restoration/redaction).
+            # Exact placeholders from mapping are valid and restorable.
+            has_corruption = _contains_unmapped_phi_fragments(answer, mapping)
 
             if role == "treating_clinician":
                 if has_corruption:
                     # LLM corrupted placeholders → fallback to extracted answer (raw chunk)
-                    fallback_answer = _extract_simple_answer(query, reranked_chunks[0] if reranked_chunks else None, role)
+                    fallback_answer = _extract_simple_answer(query, answer_chunks[0] if answer_chunks else None, role)
                     if fallback_answer:
                         answer = fallback_answer
                         logger.info("Fallback to extracted answer due to placeholder corruption")
-                    elif reranked_chunks:
+                    elif answer_chunks:
                         # Last resort: use raw chunk text directly
-                        answer = reranked_chunks[0].get("_source", {}).get("normalized_text", "")
+                        answer = select_chunk_text(answer_chunks[0].get("_source", {}))
                         logger.info("Fallback to chunk text due to placeholder corruption")
                 else:
                     # No corruption: restore original PHI values
@@ -398,7 +608,7 @@ class AnswerGenerator:
             else:
                 # For non-treating: use MASKED chunk for fallback extraction
                 if has_corruption:
-                    masked_chunk = _get_chunk_for_role(reranked_chunks[0], role) if reranked_chunks else None
+                    masked_chunk = _get_chunk_for_role(answer_chunks[0], role) if answer_chunks else None
                     fallback_answer = _extract_simple_answer(query, masked_chunk, role)
                     if fallback_answer:
                         answer = fallback_answer
