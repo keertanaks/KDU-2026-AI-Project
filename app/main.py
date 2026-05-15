@@ -9,11 +9,13 @@ from app.auth.models import Base, User, UserRole
 from app.auth.service import AuthService
 from app.auth.middleware import session_middleware
 from app.api.documents import router as documents_router
+from app.api.search import router as search_router
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Healthcare Semantic Search")
 app.include_router(documents_router)
+app.include_router(search_router)
 
 # session_middleware registered first so it becomes inner in the stack
 app.middleware("http")(session_middleware)
@@ -64,14 +66,6 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     if session_id:
         AuthService.revoke_session(db, session_id)
     return {"status": "success"}
-
-
-@app.get("/api/search")
-async def search(request: Request, q: str = None):
-    """Protected search stub — Phase 2 implements full pipeline."""
-    if q is None:
-        raise HTTPException(status_code=400, detail="Query parameter 'q' required")
-    return {"results": [], "query": q}
 
 
 @app.get("/health")
