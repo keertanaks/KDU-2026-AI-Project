@@ -89,7 +89,9 @@ Rules:
 - If field not determined from prompt, set to null and use preferences JSON fallback
 - Extract kitchen-related requests ONLY — log non-kitchen in "ignored" array
 - Color keywords resolved to hex code (navy, white, oak, etc.)
-- Layout family: L (two walls), U (three), I (one) — only if user explicitly mentions
+- Layout family: L (two walls), U (three walls), I/one_wall (single wall),
+  galley (two parallel walls), island (open plan with island)
+  — only if user explicitly mentions a shape
 - Style: capture any style words (modern, traditional, minimalist, rustic, etc.)
 - Cabinet preference: base_only, with_uppers, with_tall — only if explicitly stated
 - special_requests: island, pantry, extra storage, etc.
@@ -116,8 +118,12 @@ Always respond using the extract_intent tool with all required fields."""
                     },
                     "layout_family": {
                         "type": ["string", "null"],
-                        "enum": ["L", "U", "I", None],
-                        "description": "Kitchen layout shape if explicitly mentioned",
+                        "enum": ["L", "U", "I", "galley", "island", "one_wall", None],
+                        "description": (
+                            "Layout shape if explicitly mentioned: "
+                            "L=two walls, U=three walls, I/one_wall=single wall, "
+                            "galley=two parallel walls, island=open plan with island"
+                        ),
                     },
                     "style": {
                         "type": ["string", "null"],
