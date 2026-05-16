@@ -1,0 +1,147 @@
+"""Unit tests for pipeline/output_generator.py — mocked writer and subprocess."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from dtos.contracts import VariantSummaryDTO, ZonePlannerOutput
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _variant(
+    vid: str,
+    score: float,
+    family: str = "",
+    environment: dict[str, Any] | None = None,
+) -> VariantSummaryDTO:
+    return VariantSummaryDTO(
+        id=vid,
+        family=family,
+        score=score,
+        placement_count=3,
+        nkba_compliance_pct=0.8,
+        spillover_count=0,
+        warnings=[],
+        violations=[],
+        rationale=[],
+        layout={},
+        environment=environment or {},
+    )
+
+
+def _zone(vid: str, family: str = "L") -> ZonePlannerOutput:
+    return ZonePlannerOutput(
+        variant_id=vid,
+        family=family,
+        wall_strategies={},
+        zone_assignments={},
+        work_triangle_priority=True,
+        adjacency_hints=[],
+        avoid_zones=[],
+        notes="",
+    )
+
+
+_FAKE_RATIONALE: list[dict[str, Any]] = [{"rule_id": "GENERAL", "text": "ok"}]
+
+
+def _run(coro: Any) -> Any:  # type: ignore[misc]
+    return asyncio.run(coro)
+
+
+# ============================================================================
+# Test 1 — variants sorted by score descending
+# ============================================================================
+
+
+def test_variants_sorted_by_score(tmp_path: pytest.TempPathFactory) -> None:
+    """generate() returns layouts sorted highest score first."""
+    variants = [
+        _variant("v1", 0.7),
+        _variant("v2", 0.9),
+        _variant("v3", 0.5),
+    ]
+    zones = [_zone("v1"), _zone("v2"), _zone("v3")]
+    out_path = str(tmp_path / "output.json")  # type: ignore[operator]
+
+    mock_client = MagicMock()
+
+    with (
+        patch(
+            "agents.rationale_writer.RationaleWriter.write",
+            new=AsyncMock(return_value=_FAKE_RATIONALE),
+        ),
+        patch("subprocess.run", return_value=MagicMock(returncode=0)),
+    ):
+        from pipeline.output_generator import OutputGenerator
+
+        gen = OutputGenerator(mock_client)
+        result = _run(gen.generate(variants, zones, {}, time.time(), output_path=out_path))
+
+    assert result.layouts[0].score == pytest.approx(0.9)
+
+
+# ============================================================================
+# Test 2 — family filled from zone_variants
+# ============================================================================
+
+
+def test_family_filled_from_zone_variant(tmp_path: pytest.TempPathFactory) -> None:
+    """Variant with family='' gets family filled from matching ZonePlannerOutput."""
+    variants = [_variant("v1", 0.8, family="")]
+    zones = [_zone("v1", family="L")]
+    out_path = str(tmp_path / "output.json")  # type: ignore[operator]
+
+    mock_client = MagicMock()
+
+    with (
+        patch(
+            "agents.rationale_writer.RationaleWriter.write",
+            new=AsyncMock(return_value=_FAKE_RATIONALE),
+        ),
+        patch("subprocess.run", return_value=MagicMock(returncode=0)),
+    ):
+        from pipeline.output_generator import OutputGenerator
+
+        gen = OutputGenerator(mock_client)
+        result = _run(gen.generate(variants, zones, {}, time.time(), output_path=out_path))
+
+    assert result.layouts[0].family == "L"
+
+
+# ============================================================================
+# Test 3 — environment filled from input_json
+# ============================================================================
+
+
+def test_environment_filled(tmp_path: pytest.TempPathFactory) -> None:
+    """Variant environment={} is replaced with input_json['environment'] content."""
+    variants = [_variant("v1", 0.8)]
+    zones = [_zone("v1")]
+    env = {"floor": {}, "wall": []}
+    input_json = {"environment": env}
+    out_path = str(tmp_path / "output.json")  # type: ignore[operator]
+
+    mock_client = MagicMock()
+
+    with (
+        patch(
+            "agents.rationale_writer.RationaleWriter.write",
+            new=AsyncMock(return_value=_FAKE_RATIONALE),
+        ),
+        patch("subprocess.run", return_value=MagicMock(returncode=0)),
+    ):
+        from pipeline.output_generator import OutputGenerator
+
+        gen = OutputGenerator(mock_client)
+        result = _run(gen.generate(variants, zones, input_json, time.time(), output_path=out_path))
+
+    assert result.layouts[0].environment == env

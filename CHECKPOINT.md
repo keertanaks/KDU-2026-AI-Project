@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-17 (Phase 7 complete)
+## Last Updated: 2026-05-17 (Phase 8 complete)
 
 ---
 
@@ -18,7 +18,7 @@
 | feature/agent3 | ✅ completed | LayoutStrategist, Mode A/B, Opus retry, term validation |
 | feature/placement-engine | ✅ completed | PlacementEngine, 5 unit tests pass |
 | feature/nkba | ✅ completed | NKBAValidator, 31 rules, 6 unit tests pass |
-| feature/output | ⬜ not started | |
+| feature/output | ✅ completed | RationaleWriter (Agent 4) + OutputGenerator, 6 unit tests pass |
 | feature/graph | ⬜ not started | |
 | feature/ui | ⬜ not started | |
 
@@ -39,8 +39,8 @@
 | 5 | Agent 3 | `agents/layout_strategist.py` | ✅ | feature/agent3 | ✅ ruff+mypy |
 | 6 | Placement | `pipeline/placement_engine.py` | ✅ | feature/placement-engine | ✅ 5/5 tests |
 | 7 | NKBA | `pipeline/nkba_validator.py` | ✅ | feature/nkba | ✅ 6/6 tests (bugs fixed: room depth, cross-wall guard) |
-| 8 | Agent 4 | `agents/rationale_writer.py` | ⬜ | - | - |
-| 8 | Output | `pipeline/output_generator.py` | ⬜ | - | - |
+| 8 | Agent 4 | `agents/rationale_writer.py` | ✅ | feature/output | ✅ 3/3 tests |
+| 8 | Output | `pipeline/output_generator.py` | ✅ | feature/output | ✅ 3/3 tests |
 | 9 | Graph | `graph/kitchen_graph.py` | ⬜ | - | - |
 | 9 | Prep | `pipeline/preprocessor.py` | ⬜ | - | - |
 | 9 | Zone | `pipeline/zone_planner.py` | ⬜ | - | - |
