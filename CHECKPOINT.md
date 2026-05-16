@@ -38,7 +38,7 @@
 | 4 | Agent 2 | `agents/catalog_selector.py` | ✅ | feature/agent2 | ✅ ruff+mypy |
 | 5 | Agent 3 | `agents/layout_strategist.py` | ✅ | feature/agent3 | ✅ ruff+mypy |
 | 6 | Placement | `pipeline/placement_engine.py` | ✅ | feature/placement-engine | ✅ 5/5 tests |
-| 7 | NKBA | `pipeline/nkba_validator.py` | ✅ | feature/nkba | ✅ 6/6 tests |
+| 7 | NKBA | `pipeline/nkba_validator.py` | ✅ | feature/nkba | ✅ 6/6 tests (bugs fixed: room depth, cross-wall guard) |
 | 8 | Agent 4 | `agents/rationale_writer.py` | ⬜ | - | - |
 | 8 | Output | `pipeline/output_generator.py` | ⬜ | - | - |
 | 9 | Graph | `graph/kitchen_graph.py` | ⬜ | - | - |

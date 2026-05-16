@@ -237,6 +237,8 @@ class NKBAValidator:
         fridge = self._find("fridge", placed) or self._find("refrigerator", placed)
         if stove is None or fridge is None:
             return
+        if stove.anchor_wall != fridge.anchor_wall:
+            return  # different walls — WORKFLOW-02 does not apply cross-wall
         stove_right = stove.position_mm["x"] + stove.dimensions_mm["width"]
         fridge_right = fridge.position_mm["x"] + fridge.dimensions_mm["width"]
         gap = abs(stove.position_mm["x"] - fridge_right)
@@ -973,9 +975,11 @@ class NKBAValidator:
         return None
 
     def _room_depth(self, spatial: SpatialEngineOutput) -> float:
-        """Estimate room depth from wall thickness sums (rough heuristic)."""
-        depths = [w.thickness_mm for w in spatial.walls]
-        return max(depths, default=3000.0) * 10.0
+        """Derive room depth from the Y-extent of all wall points."""
+        all_y = [p["y"] for w in spatial.walls for p in w.points if "y" in p]
+        if all_y:
+            return float(max(all_y) - min(all_y))
+        return 3000.0
 
     def _front_clearance(self, item: PlacedItem, placed: PlacementEngineOutput) -> float:
         """Look up front_clearance_mm from preprocessing nkba_constraints if available."""

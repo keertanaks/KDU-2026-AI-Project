@@ -171,12 +171,31 @@ def test_workflow_03_fail_2000mm() -> None:
 
 
 def test_nkba_cl_01_fail_insufficient_clearance() -> None:
-    """Fridge with only 500mm front clearance → NKBA-CL-01 violation.
+    """Fridge with only 1000mm clearance in a 1500mm-deep room → NKBA-CL-01 violation.
 
-    room_depth estimate = wall.thickness_mm * 10 = 100 * 10 = 1000mm.
-    fridge y=400, depth=100 → clearance = 1000 - 400 - 100 = 500mm < 1067mm.
+    Wall points give room depth = max_y - min_y = 1500 - 0 = 1500mm.
+    fridge y=400, depth=100 → clearance = 1500 - 400 - 100 = 1000mm < 1067mm.
     """
     validator = NKBAValidator()
+    north = Wall(
+        name="north_wall",
+        anchor="north_wall",
+        length_mm=6000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 1500}, {"x": 6000, "y": 1500}],
+    )
+    south = Wall(
+        name="south_wall",
+        anchor="south_wall",
+        length_mm=6000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=False,
+        points=[{"x": 0, "y": 0}, {"x": 6000, "y": 0}],
+    )
+    spatial = _spatial(walls=[north, south])
     fridge = _item(
         "FR-01",
         "Refrigerator",
@@ -189,7 +208,7 @@ def test_nkba_cl_01_fail_insufficient_clearance() -> None:
         height=1800.0,
         zone_type="cooling",
     )
-    result = validator.validate(_placed({"FR-01": fridge}), _spatial(), _preprocessing())
+    result = validator.validate(_placed({"FR-01": fridge}), spatial, _preprocessing())
     violated_ids = {v["rule_id"] for v in result.violations}
     assert "NKBA-CL-01" in violated_ids
 
