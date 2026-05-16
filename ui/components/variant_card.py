@@ -15,9 +15,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _get(obj: object, key: str) -> Any:
+def _get(obj: object, key: str, default: Any = None) -> Any:
     """Unified access for dataclass and dict results."""
-    return obj[key] if isinstance(obj, dict) else getattr(obj, key)
+    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)  # type: ignore[union-attr]
 
 
 def score_badge(score: float) -> str:
@@ -47,10 +47,10 @@ def zone_pills_html(layout_dict: dict[str, Any]) -> str:
 
 def render_variant_card(v: Any, index: int) -> None:
     """Render a full variant card with score, images, zones, violations, and rationale."""
-    v_id = str(_get(v, "id"))
-    family = str(_get(v, "family"))
-    score = float(_get(v, "score"))
-    count = int(_get(v, "placement_count"))
+    v_id = str(_get(v, "id") or "")
+    family = str(_get(v, "family") or "")
+    score = float(_get(v, "score") or 0.0)
+    count = int(_get(v, "placement_count") or 0)
     violations = list(_get(v, "violations") or [])
     rationale = list(_get(v, "rationale") or [])
     layout = dict(_get(v, "layout") or {})

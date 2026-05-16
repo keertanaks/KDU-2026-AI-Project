@@ -102,9 +102,9 @@ st.markdown(f"<style>{GLOBAL_CSS}</style>", unsafe_allow_html=True)
 # ============================================================================
 
 
-def _get(obj: object, key: str) -> Any:
+def _get(obj: object, key: str, default: Any = None) -> Any:
     """Unified access for dataclass results and dict results loaded from output.json."""
-    return obj[key] if isinstance(obj, dict) else getattr(obj, key)
+    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)  # type: ignore[union-attr]
 
 
 # ============================================================================
@@ -196,9 +196,9 @@ with tab2:
         cols = st.columns(len(layouts))
         for col, v in zip(cols, layouts, strict=False):
             with col:
-                v_id = str(_get(v, "id"))
-                family = str(_get(v, "family"))
-                score = float(_get(v, "score"))
+                v_id = str(_get(v, "id") or "")
+                family = str(_get(v, "family") or "")
+                score = float(_get(v, "score") or 0.0)
                 layout = dict(_get(v, "layout") or {})
                 viols = list(_get(v, "violations") or [])
 
@@ -350,9 +350,9 @@ with tab4:
         with col_right:
             viols = list(_get(chosen_v, "violations") or [])
             penalty = sum(RULE_WEIGHTS.get(x["rule_id"], 0.0) for x in viols)
-            nkba_pct = float(_get(chosen_v, "nkba_compliance_pct"))
-            spillover = int(_get(chosen_v, "spillover_count"))
-            score = float(_get(chosen_v, "score"))
+            nkba_pct = float(_get(chosen_v, "nkba_compliance_pct") or 0.0)
+            spillover = int(_get(chosen_v, "spillover_count") or 0)
+            score = float(_get(chosen_v, "score") or 0.0)
 
             st.subheader("Score Breakdown")
             st.markdown(
@@ -391,13 +391,13 @@ with tab4:
         for variant in layouts:
             comparison_rows.append(
                 {
-                    "Variant": str(_get(variant, "id")),
-                    "Score": f"{float(_get(variant, 'score')):.2f}",
-                    "Family": str(_get(variant, "family")),
-                    "NKBA %": f"{float(_get(variant, 'nkba_compliance_pct')) * 100:.0f}%",
+                    "Variant": str(_get(variant, "id") or ""),
+                    "Score": f"{float(_get(variant, 'score') or 0.0):.2f}",
+                    "Family": str(_get(variant, "family") or ""),
+                    "NKBA %": f"{float(_get(variant, 'nkba_compliance_pct') or 0.0) * 100:.0f}%",
                     "Violations": len(list(_get(variant, "violations") or [])),
-                    "Spillover": int(_get(variant, "spillover_count")),
-                    "Items": int(_get(variant, "placement_count")),
+                    "Spillover": int(_get(variant, "spillover_count") or 0),
+                    "Items": int(_get(variant, "placement_count") or 0),
                 }
             )
         st.dataframe(comparison_rows, use_container_width=True, hide_index=True)

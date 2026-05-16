@@ -43,9 +43,9 @@ ALL_RULES: list[tuple[str, str, float]] = [
 RULE_WEIGHTS: dict[str, float] = {r[0]: r[2] for r in ALL_RULES}
 
 
-def _get(obj: object, key: str) -> Any:
+def _get(obj: object, key: str, default: Any = None) -> Any:
     """Unified access for dataclass and dict results."""
-    return obj[key] if isinstance(obj, dict) else getattr(obj, key)
+    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)  # type: ignore[union-attr]
 
 
 def render_nkba_checklist(v: Any) -> None:
