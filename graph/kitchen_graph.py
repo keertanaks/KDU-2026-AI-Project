@@ -68,7 +68,7 @@ class KitchenGraph:
 
     def _build(self) -> Any:
         """Build and compile the LangGraph StateGraph."""
-        graph: StateGraph = StateGraph(KitchenGraphState)
+        graph: StateGraph[KitchenGraphState] = StateGraph(KitchenGraphState)
 
         graph.add_node("spatial", self._node_spatial)
         graph.add_node("preprocessing", self._node_preprocessing)
@@ -101,9 +101,11 @@ class KitchenGraph:
         logger.info("Spatial: %d walls, capacity=%s", len(spatial.walls), spatial.layout_capacity)
         return {"spatial_output": spatial}
 
-    def _node_preprocessing(self, state: KitchenGraphState) -> dict[str, Any]:
+    async def _node_preprocessing(self, state: KitchenGraphState) -> dict[str, Any]:
         """Layer 2: parse intent, load catalog, select SKUs."""
-        result = self._preprocessor.run(state["input_json"], state["spatial_output"])
+        result = await asyncio.to_thread(
+            self._preprocessor.run, state["input_json"], state["spatial_output"]
+        )
         return {"preprocessing_output": result}
 
     async def _node_zone_planner(self, state: KitchenGraphState) -> dict[str, Any]:

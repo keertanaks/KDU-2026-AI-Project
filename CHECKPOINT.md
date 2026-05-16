@@ -19,7 +19,7 @@
 | feature/placement-engine | ✅ completed | PlacementEngine, 5 unit tests pass |
 | feature/nkba | ✅ completed | NKBAValidator, 31 rules, 6 unit tests pass |
 | feature/output | ✅ completed | RationaleWriter (Agent 4) + OutputGenerator, 6 unit tests pass |
-| feature/graph | ✅ completed | KitchenGraph (LangGraph) + Preprocessor + ZonePlanner, 8 unit tests pass |
+| feature/graph | ✅ completed | KitchenGraph (LangGraph) + Preprocessor + ZonePlanner, 8 unit tests pass (bug fix: _node_preprocessing now async with asyncio.to_thread; StateGraph type param) |
 | feature/ui | ⬜ not started | |
 
 ---
