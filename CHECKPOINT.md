@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-16
+## Last Updated: 2026-05-16 (Phase 1 complete)
 
 ---
 
@@ -10,8 +10,8 @@
 |--------|--------|-------|
 | main | ✅ clean | baseline — existing files only |
 | dev2 | ✅ created | integration branch |
-| feature/dtos | ⬜ not started | |
-| feature/mcp-server | ⬜ not started | |
+| feature/dtos | ✅ merged | 192 lines, all DTOs + KitchenGraphState |
+| feature/mcp-server | ✅ merged | 9 MCP tools, catalog loader, color resolver |
 | feature/spatial-engine | ⬜ not started | |
 | feature/agent1 | ⬜ not started | |
 | feature/agent2 | ⬜ not started | |
@@ -28,11 +28,11 @@
 
 | Phase | Module | File | Status | PR | Test |
 |-------|--------|------|--------|-----|------|
-| 0 | DTOs | `dtos/contracts.py` | ⬜ | - | - |
+| 0 | DTOs | `dtos/contracts.py` | ✅ | feature/dtos | ✅ ruff+mypy |
 | 0 | Requirements | `requirements.txt` | ⬜ | - | - |
-| 1 | MCP | `mcp_server/catalog_loader.py` | ⬜ | - | - |
-| 1 | MCP | `mcp_server/color_resolver.py` | ⬜ | - | - |
-| 1 | MCP | `mcp_server/server.py` | ⬜ | - | - |
+| 1 | MCP | `mcp_server/catalog_loader.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
+| 1 | MCP | `mcp_server/color_resolver.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
+| 1 | MCP | `mcp_server/server.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
 | 2 | Spatial | `pipeline/spatial_engine.py` | ⬜ | - | - |
 | 3 | Agent 1 | `agents/prompt_parser.py` | ⬜ | - | - |
 | 4 | Agent 2 | `agents/catalog_selector.py` | ⬜ | - | - |
