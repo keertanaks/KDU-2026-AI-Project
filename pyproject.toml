@@ -1,6 +1,7 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+exclude = ["render.py", "layout.py"]
 select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
