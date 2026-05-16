@@ -6,7 +6,6 @@ using CIE76 delta-E distance in Lab color space.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import anthropic
@@ -14,7 +13,10 @@ from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie76
 from colormath.color_objects import LabColor, sRGBColor
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+from utils.model_selector import for_agent
+
+logger = get_logger(__name__)
 
 # Delta-E tolerance for color matching (CIE Lab distance)
 DELTA_E_TOLERANCE = 15.0
@@ -39,8 +41,9 @@ Return ONLY the hex code, nothing else.
 Color description: {keyword}"""
 
     try:
+        model = for_agent("catalog_selector")
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=model,
             max_tokens=10,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -52,11 +55,11 @@ Color description: {keyword}"""
         # Ensure 6 chars
         hex_code: str = result.zfill(6)[:6]
 
-        logger.debug(f"Resolved color '{keyword}' to hex {hex_code}")
+        logger.debug("Resolved color '%s' to hex %s", keyword, hex_code)
         return hex_code
 
     except anthropic.APIError as e:
-        logger.error(f"Failed to resolve color keyword '{keyword}': {e}")
+        logger.error("Failed to resolve color keyword '%s': %s", keyword, e)
         # Fallback to neutral gray
         return "808080"
 
@@ -90,7 +93,7 @@ def delta_e(hex1: str, hex2: str) -> float:
         return distance
 
     except (ValueError, IndexError) as e:
-        logger.warning(f"Failed to parse hex colors {hex1}, {hex2}: {e}")
+        logger.warning("Failed to parse hex colors %s, %s: %s", hex1, hex2, e)
         return float("inf")
 
 
@@ -120,7 +123,10 @@ def match_catalog_color(
 
     if best_match:
         logger.debug(
-            f"Matched color {hex_code} to SKU {best_match[0]} (delta-E {best_match[1]:.2f})"
+            "Matched color %s to SKU %s (delta-E %.2f)",
+            hex_code,
+            best_match[0],
+            best_match[1],
         )
 
     return best_match

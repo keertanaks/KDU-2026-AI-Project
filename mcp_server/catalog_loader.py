@@ -7,11 +7,12 @@ All color fields normalized to 6-char lowercase hex.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Alias maps for normalized field values
 CATEGORY_ALIASES = {
@@ -134,7 +135,7 @@ def load_catalog(catalog_id: str = "catalog", base_dir: str = ".") -> dict[str, 
 
         normalized[sku_id] = normalized_sku
 
-    logger.info(f"Loaded {len(normalized)} SKUs from {catalog_path}")
+    logger.info("Loaded %d SKUs from %s", len(normalized), catalog_path)
     return normalized
 
 
