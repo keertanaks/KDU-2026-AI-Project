@@ -191,7 +191,8 @@ class LayoutStrategist:
         user_msg = self._build_user_message(intent, preprocessing, spatial, seed, violations)
 
         try:
-            response = self.client.messages.create(
+            response = await asyncio.to_thread(
+                self.client.messages.create,
                 model=model,
                 max_tokens=2048,
                 system=[
