@@ -99,6 +99,9 @@ class IntentDTO:
     cabinet_preference: str | None
     special_requests: list[str]
     ignored: list[str]
+    budget_tier: str | None
+    must_have: list[str]
+    avoid: list[str]
 
 
 # ============================================================================

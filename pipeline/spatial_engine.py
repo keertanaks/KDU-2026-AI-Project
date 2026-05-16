@@ -5,12 +5,12 @@ Pure deterministic geometry. No API calls. All measurements in mm.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from dtos.contracts import Opening, Segment, SpatialEngineOutput, Wall
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Minimum segment length to include (anything smaller is too small for cabinets)
 MIN_SEGMENT_LENGTH_MM = 100
@@ -87,8 +87,10 @@ class SpatialEngine:
         layout_capacity = self._determine_layout_capacity(walls)
 
         logger.info(
-            f"Parsed room: {len(walls)} cabinet walls, {len(exclusions)} openings, "
-            f"capacity={layout_capacity}"
+            "Parsed room: %d cabinet walls, %d openings, capacity=%s",
+            len(walls),
+            len(exclusions),
+            layout_capacity,
         )
 
         return SpatialEngineOutput(
@@ -118,7 +120,7 @@ class SpatialEngine:
             )
             walls.append(wall)
 
-        logger.debug(f"Parsed {len(walls)} cabinet walls")
+        logger.debug("Parsed %d cabinet walls", len(walls))
         return walls
 
     def _parse_openings(self, opening_list: list[dict[str, Any]]) -> list[Opening]:
@@ -156,7 +158,7 @@ class SpatialEngine:
             )
             exclusions.append(opening)
 
-        logger.debug(f"Parsed {len(exclusions)} openings")
+        logger.debug("Parsed %d openings", len(exclusions))
         return exclusions
 
     def _compute_free_segments(
@@ -182,7 +184,10 @@ class SpatialEngine:
             free_segments[wall.name] = segments
 
             logger.debug(
-                f"Wall {wall.name}: {len(wall_openings)} openings, {len(segments)} free segments"
+                "Wall %s: %d openings, %d free segments",
+                wall.name,
+                len(wall_openings),
+                len(segments),
             )
 
         return free_segments
