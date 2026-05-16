@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-17 (Phase 6 complete)
+## Last Updated: 2026-05-17 (Phase 7 complete)
 
 ---
 
@@ -17,7 +17,7 @@
 | feature/agent2 | ✅ completed | CatalogSelector, budget/color filter, zone grouping |
 | feature/agent3 | ✅ completed | LayoutStrategist, Mode A/B, Opus retry, term validation |
 | feature/placement-engine | ✅ completed | PlacementEngine, 5 unit tests pass |
-| feature/nkba | ⬜ not started | |
+| feature/nkba | ✅ completed | NKBAValidator, 31 rules, 6 unit tests pass |
 | feature/output | ⬜ not started | |
 | feature/graph | ⬜ not started | |
 | feature/ui | ⬜ not started | |
@@ -38,7 +38,7 @@
 | 4 | Agent 2 | `agents/catalog_selector.py` | ✅ | feature/agent2 | ✅ ruff+mypy |
 | 5 | Agent 3 | `agents/layout_strategist.py` | ✅ | feature/agent3 | ✅ ruff+mypy |
 | 6 | Placement | `pipeline/placement_engine.py` | ✅ | feature/placement-engine | ✅ 5/5 tests |
-| 7 | NKBA | `pipeline/nkba_validator.py` | ⬜ | - | - |
+| 7 | NKBA | `pipeline/nkba_validator.py` | ✅ | feature/nkba | ✅ 6/6 tests (bugs fixed: room depth, cross-wall guard) |
 | 8 | Agent 4 | `agents/rationale_writer.py` | ⬜ | - | - |
 | 8 | Output | `pipeline/output_generator.py` | ⬜ | - | - |
 | 9 | Graph | `graph/kitchen_graph.py` | ⬜ | - | - |
