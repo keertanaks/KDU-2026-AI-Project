@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-16 (Phase 5 complete)
+## Last Updated: 2026-05-17 (Phase 6 complete)
 
 ---
 
@@ -16,7 +16,7 @@
 | feature/agent1 | ✅ merged | PromptParser, tool forcing, prompt caching |
 | feature/agent2 | ✅ completed | CatalogSelector, budget/color filter, zone grouping |
 | feature/agent3 | ✅ completed | LayoutStrategist, Mode A/B, Opus retry, term validation |
-| feature/placement-engine | ⬜ not started | |
+| feature/placement-engine | ✅ completed | PlacementEngine, 5 unit tests pass |
 | feature/nkba | ⬜ not started | |
 | feature/output | ⬜ not started | |
 | feature/graph | ⬜ not started | |
@@ -37,7 +37,7 @@
 | 3 | Agent 1 | `agents/prompt_parser.py` | ✅ | feature/agent1 | ✅ ruff+mypy |
 | 4 | Agent 2 | `agents/catalog_selector.py` | ✅ | feature/agent2 | ✅ ruff+mypy |
 | 5 | Agent 3 | `agents/layout_strategist.py` | ✅ | feature/agent3 | ✅ ruff+mypy |
-| 6 | Placement | `pipeline/placement_engine.py` | ⬜ | - | - |
+| 6 | Placement | `pipeline/placement_engine.py` | ✅ | feature/placement-engine | ✅ 5/5 tests |
 | 7 | NKBA | `pipeline/nkba_validator.py` | ⬜ | - | - |
 | 8 | Agent 4 | `agents/rationale_writer.py` | ⬜ | - | - |
 | 8 | Output | `pipeline/output_generator.py` | ⬜ | - | - |
