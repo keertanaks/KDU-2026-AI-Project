@@ -6,7 +6,7 @@ No logic, math, or LLM calls — data definitions only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
 # ============================================================================
@@ -139,6 +139,10 @@ class ZonePlannerOutput:
     family: str
     wall_strategies: dict[str, list[str]]
     zone_assignments: dict[str, str]
+    work_triangle_priority: bool = True
+    adjacency_hints: list[str] = field(default_factory=list)
+    avoid_zones: list[str] = field(default_factory=list)
+    notes: str = ""
 
 
 @dataclass
