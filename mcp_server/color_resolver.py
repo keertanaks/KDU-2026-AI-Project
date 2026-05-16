@@ -10,7 +10,7 @@ from typing import Any
 
 import anthropic
 from colormath.color_conversions import convert_color
-from colormath.color_diff import delta_e_cie76
+from colormath.color_diff import delta_e_cie1976 as delta_e_cie76
 from colormath.color_objects import LabColor, sRGBColor
 
 from utils.logger import get_logger
