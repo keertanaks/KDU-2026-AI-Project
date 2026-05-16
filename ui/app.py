@@ -8,10 +8,10 @@ from typing import Any
 
 import streamlit as st
 
-from ui.components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
-from ui.components.pipeline_log import run_pipeline_with_log
-from ui.components.room_picker import render_room_picker
-from ui.components.variant_card import render_variant_card, score_badge, zone_pills_html
+from components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
+from components.pipeline_log import run_pipeline_with_log
+from components.room_picker import render_room_picker
+from components.variant_card import render_variant_card, score_badge, zone_pills_html
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
