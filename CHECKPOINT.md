@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-16
+## Last Updated: 2026-05-16 (Phase 0 complete)
 
 ---
 
@@ -10,7 +10,7 @@
 |--------|--------|-------|
 | main | ✅ clean | baseline — existing files only |
 | dev2 | ✅ created | integration branch |
-| feature/dtos | ⬜ not started | |
+| feature/dtos | ✅ merged | 192 lines, all DTOs + KitchenGraphState |
 | feature/mcp-server | ⬜ not started | |
 | feature/spatial-engine | ⬜ not started | |
 | feature/agent1 | ⬜ not started | |
@@ -28,8 +28,8 @@
 
 | Phase | Module | File | Status | PR | Test |
 |-------|--------|------|--------|-----|------|
-| 0 | DTOs | `dtos/contracts.py` | ⬜ | - | - |
-| 0 | Requirements | `requirements.txt` | ⬜ | - | - |
+| 0 | DTOs | `dtos/contracts.py` | ✅ | feature/dtos | ✅ ruff+mypy |
+| 0 | Requirements | `requirements.txt` | ✅ | feature/base-setup | - |
 | 1 | MCP | `mcp_server/catalog_loader.py` | ⬜ | - | - |
 | 1 | MCP | `mcp_server/color_resolver.py` | ⬜ | - | - |
 | 1 | MCP | `mcp_server/server.py` | ⬜ | - | - |
@@ -67,7 +67,7 @@ Status codes: ⬜ not started · 🔄 in progress · ✅ done · ❌ blocked
 | WORKFLOW-03 uses 3962mm minimum | ⬜ to verify |
 | Collision whitelist complete (4 pairs) | ⬜ to verify |
 | Variant seeds inject different suffixes | ⬜ to verify |
-| KitchenGraphState defined before nodes | ⬜ to verify |
+| KitchenGraphState defined before nodes | ✅ defined in dtos/contracts.py |
 
 ---
 
