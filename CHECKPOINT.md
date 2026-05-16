@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-16 (Phase 1 complete)
+## Last Updated: 2026-05-16 (Phase 2 complete)
 
 ---
 
@@ -12,7 +12,7 @@
 | dev2 | ✅ created | integration branch |
 | feature/dtos | ✅ merged | 192 lines, all DTOs + KitchenGraphState |
 | feature/mcp-server | ✅ merged | 9 MCP tools, catalog loader, color resolver |
-| feature/spatial-engine | ⬜ not started | |
+| feature/spatial-engine | ✅ merged | Geometry parser, 13 unit tests pass |
 | feature/agent1 | ⬜ not started | |
 | feature/agent2 | ⬜ not started | |
 | feature/agent3 | ⬜ not started | |
@@ -33,7 +33,7 @@
 | 1 | MCP | `mcp_server/catalog_loader.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
 | 1 | MCP | `mcp_server/color_resolver.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
 | 1 | MCP | `mcp_server/server.py` | ✅ | feature/mcp-server | ✅ ruff+mypy |
-| 2 | Spatial | `pipeline/spatial_engine.py` | ⬜ | - | - |
+| 2 | Spatial | `pipeline/spatial_engine.py` | ✅ | feature/spatial-engine | ✅ 13/13 tests |
 | 3 | Agent 1 | `agents/prompt_parser.py` | ⬜ | - | - |
 | 4 | Agent 2 | `agents/catalog_selector.py` | ⬜ | - | - |
 | 5 | Agent 3 | `agents/layout_strategist.py` | ⬜ | - | - |
