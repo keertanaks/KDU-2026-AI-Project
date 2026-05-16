@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-17 (Phase 8 complete)
+## Last Updated: 2026-05-17 (Phase 9 complete)
 
 ---
 
@@ -19,7 +19,7 @@
 | feature/placement-engine | ✅ completed | PlacementEngine, 5 unit tests pass |
 | feature/nkba | ✅ completed | NKBAValidator, 31 rules, 6 unit tests pass |
 | feature/output | ✅ completed | RationaleWriter (Agent 4) + OutputGenerator, 6 unit tests pass |
-| feature/graph | ⬜ not started | |
+| feature/graph | ✅ completed | KitchenGraph (LangGraph) + Preprocessor + ZonePlanner, 8 unit tests pass (bug fix: _node_preprocessing now async with asyncio.to_thread; StateGraph type param) |
 | feature/ui | ⬜ not started | |
 
 ---
@@ -41,9 +41,9 @@
 | 7 | NKBA | `pipeline/nkba_validator.py` | ✅ | feature/nkba | ✅ 6/6 tests (bugs fixed: room depth, cross-wall guard) |
 | 8 | Agent 4 | `agents/rationale_writer.py` | ✅ | feature/output | ✅ 3/3 tests |
 | 8 | Output | `pipeline/output_generator.py` | ✅ | feature/output | ✅ 3/3 tests |
-| 9 | Graph | `graph/kitchen_graph.py` | ⬜ | - | - |
-| 9 | Prep | `pipeline/preprocessor.py` | ⬜ | - | - |
-| 9 | Zone | `pipeline/zone_planner.py` | ⬜ | - | - |
+| 9 | Graph | `graph/kitchen_graph.py` | ✅ | feature/graph | ✅ 3/3 tests |
+| 9 | Prep | `pipeline/preprocessor.py` | ✅ | feature/graph | ✅ 3/3 tests |
+| 9 | Zone | `pipeline/zone_planner.py` | ✅ | feature/graph | ✅ 2/2 tests |
 | 10 | UI | `ui/app.py` | ⬜ | - | - |
 | 10 | UI | `ui/components/room_picker.py` | ⬜ | - | - |
 | 10 | UI | `ui/components/pipeline_log.py` | ⬜ | - | - |
