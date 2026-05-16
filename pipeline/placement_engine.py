@@ -81,6 +81,12 @@ class PlacementEngine:
         placed: dict[str, PlacedItem] = {}
         spillover: list[str] = []
 
+        landing_areas = self._compute_landing_areas(preprocessing, spatial)
+        logger.info(
+            "Landing areas allocated: %s",
+            {k: round(v) for k, v in landing_areas.items()},
+        )
+
         all_walls: set[str] = set(zone_plan.zone_assignments.values())
         all_walls.update(zone_plan.wall_strategies.keys())
 
@@ -164,24 +170,38 @@ class PlacementEngine:
         spillover: list[str],
     ) -> None:
         """Handle an item that has no free space on its assigned wall."""
+        # Step 1: try adjacent wall
+        adj = self._adjacent_wall(wall.name, spatial)
+        if adj is not None:
+            result = self._first_free(adj, sku, placed, spatial)
+            if result is not None:
+                x, y, z = result
+                placed[sku.sku_id] = self._make_item(sku, zone_type, x, y, z, adj.name)
+                spillover.append(f"SPILLOVER: {sku.sku_id} moved from {wall.name} to {adj.name}")
+                logger.info(
+                    "SPILLOVER: '%s' moved from '%s' to adjacent wall '%s'",
+                    sku.sku_id,
+                    wall.name,
+                    adj.name,
+                )
+                return
+
+        # Step 2: no space on adjacent wall either — drop or force
         cat = sku.category.lower()
         name = sku.name.lower()
 
-        # Droppable items: wall_cabinet → island → skip
         for kw in _DROPPABLE_KW:
             if kw in cat or kw in name:
                 logger.warning(
-                    "SPILLOVER: '%s' (%s) dropped — no space on wall '%s'",
+                    "SPILLOVER: '%s' (%s) dropped — no space on wall '%s' or adjacent",
                     sku.sku_id,
                     sku.name,
                     wall.name,
                 )
-                spillover.append(
-                    f"SPILLOVER: {sku.sku_id} dropped from {wall.name} (no space)"
-                )
+                spillover.append(f"SPILLOVER: {sku.sku_id} dropped from {wall.name} (no space)")
                 return
 
-        # Non-droppable: force to nearest corner and log constraint violation
+        # Non-droppable: force to corner, log constraint violation
         x = 0.0
         y = wall.thickness_mm
         z = Z_FLOOR_MM
@@ -565,10 +585,25 @@ class PlacementEngine:
         return None
 
     def _compute_landing_areas(
-        self, preprocessing: PreprocessingOutput, spatial: SpatialEngineOutput
+        self,
+        preprocessing: PreprocessingOutput,
+        spatial: SpatialEngineOutput,
     ) -> dict[str, float]:
-        """Return minimum landing area widths per zone from zone_min_widths."""
-        return dict(preprocessing.zone_min_widths)
+        """Allocate landing area widths per zone, proportionally when space is tight."""
+        total_available = sum(
+            seg.length_mm for segs in spatial.free_segments.values() for seg in segs
+        )
+        total_needed = sum(preprocessing.zone_min_widths.values())
+
+        if total_needed <= total_available:
+            return dict(preprocessing.zone_min_widths)
+
+        # Weighted proportional allocation
+        total_weight = sum(ZONE_WEIGHTS.values())
+        return {
+            zone: (ZONE_WEIGHTS.get(zone, 0.4) / total_weight) * total_available
+            for zone in preprocessing.zone_min_widths
+        }
 
     # ------------------------------------------------------------------ #
     # Factory                                                              #
