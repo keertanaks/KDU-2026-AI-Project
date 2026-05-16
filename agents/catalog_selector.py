@@ -90,14 +90,19 @@ class CatalogSelector:
                         "type": "text",
                         "text": self._system,
                         "cache_control": {"type": "ephemeral"},
-                    }
+                    },
+                    {
+                        "type": "text",
+                        "text": f"Available SKUs (pre-filtered by budget and color):\n{summary}",
+                        "cache_control": {"type": "ephemeral"},
+                    },
                 ],
                 tools=self._tools,
                 tool_choice={"type": "tool", "name": "select_skus"},
                 messages=[
                     {
                         "role": "user",
-                        "content": self._build_prompt(intent, spatial_output, summary),
+                        "content": self._build_prompt(intent, spatial_output),
                     }
                 ],
             )
@@ -209,13 +214,8 @@ class CatalogSelector:
             "- Respond only via the select_skus tool"
         )
 
-    def _build_prompt(
-        self,
-        intent: IntentDTO,
-        spatial: SpatialEngineOutput,
-        catalog_summary: str,
-    ) -> str:
-        """Build user message with intent, spatial context, and catalog."""
+    def _build_prompt(self, intent: IntentDTO, spatial: SpatialEngineOutput) -> str:
+        """Build user message with intent and spatial context."""
         intent_dict: dict[str, Any] = {
             "color_keyword": intent.color_keyword,
             "color_hex": intent.color_hex,
@@ -229,8 +229,7 @@ class CatalogSelector:
         return (
             "Select SKUs for this kitchen design.\n\n"
             f"Intent:\n{json.dumps(intent_dict, indent=2)}\n\n"
-            f"Room layout capacity: {spatial.layout_capacity}\n\n"
-            f"Available SKUs:\n{catalog_summary}"
+            f"Room layout capacity: {spatial.layout_capacity}"
         )
 
     def _catalog_summary(self, catalog: dict[str, dict[str, Any]]) -> str:
