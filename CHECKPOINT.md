@@ -1,6 +1,6 @@
 # CHECKPOINT — Implementation Status
 ## Auto-Design System | Project 2
-## Last Updated: 2026-05-17 (Phase 9 complete)
+## Last Updated: 2026-05-17 (Phase 10 complete)
 
 ---
 
@@ -20,7 +20,7 @@
 | feature/nkba | ✅ completed | NKBAValidator, 31 rules, 6 unit tests pass |
 | feature/output | ✅ completed | RationaleWriter (Agent 4) + OutputGenerator, 6 unit tests pass |
 | feature/graph | ✅ completed | KitchenGraph (LangGraph) + Preprocessor + ZonePlanner, 8 unit tests pass (bug fix: _node_preprocessing now async with asyncio.to_thread; StateGraph type param) |
-| feature/ui | ⬜ not started | |
+| feature/ui | ✅ completed | Streamlit 4-tab UI, dark theme, zone colors from layout.py, SKU colors from catalog.json |
 
 ---
 
@@ -44,11 +44,11 @@
 | 9 | Graph | `graph/kitchen_graph.py` | ✅ | feature/graph | ✅ 3/3 tests |
 | 9 | Prep | `pipeline/preprocessor.py` | ✅ | feature/graph | ✅ 3/3 tests |
 | 9 | Zone | `pipeline/zone_planner.py` | ✅ | feature/graph | ✅ 2/2 tests |
-| 10 | UI | `ui/app.py` | ⬜ | - | - |
-| 10 | UI | `ui/components/room_picker.py` | ⬜ | - | - |
-| 10 | UI | `ui/components/pipeline_log.py` | ⬜ | - | - |
-| 10 | UI | `ui/components/variant_card.py` | ⬜ | - | - |
-| 10 | UI | `ui/components/nkba_checklist.py` | ⬜ | - | - |
+| 10 | UI | `ui/app.py` | ✅ | feature/ui | ✅ ruff+mypy |
+| 10 | UI | `ui/components/room_picker.py` | ✅ | feature/ui | ✅ ruff+mypy |
+| 10 | UI | `ui/components/pipeline_log.py` | ✅ | feature/ui | ✅ ruff+mypy |
+| 10 | UI | `ui/components/variant_card.py` | ✅ | feature/ui | ✅ ruff+mypy |
+| 10 | UI | `ui/components/nkba_checklist.py` | ✅ | feature/ui | ✅ ruff+mypy |
 
 Status codes: ⬜ not started · 🔄 in progress · ✅ done · ❌ blocked
 
