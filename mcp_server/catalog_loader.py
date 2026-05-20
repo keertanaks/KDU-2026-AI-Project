@@ -29,6 +29,20 @@ PRICE_ALIASES = {
     "luxury": "high",
 }
 
+# When catalog.json category="cabinet", use the item type prefix to find the real category.
+# Ordered from most-specific to least-specific prefix.
+TYPE_TO_CATEGORY_PREFIX: list[tuple[str, str]] = [
+    ("base_cabinet", "base_cabinet"),
+    ("base_drawer", "base_cabinet"),
+    ("base_blind_corner", "base_cabinet"),
+    ("corner_cabinet", "base_cabinet"),
+    ("wall_cabinet", "wall_cabinet"),
+    ("wall_open_shelf", "wall_cabinet"),
+    ("wall_glass_cabinet", "wall_cabinet"),
+    ("tall_cabinet", "tall_cabinet"),
+    ("island", "island"),
+]
+
 # Required fields that every SKU must have
 REQUIRED_FIELDS = {
     "sku_id",
@@ -112,10 +126,20 @@ def load_catalog(catalog_id: str = "catalog", base_dir: str = ".") -> dict[str, 
         if not isinstance(constraints, dict):
             constraints = {}
 
+        raw_category = item.get("category", "")
+        item_type = item.get("type", "")
+        if raw_category.lower().strip() == "cabinet":
+            specific_cat = next(
+                (cat for prefix, cat in TYPE_TO_CATEGORY_PREFIX if item_type.startswith(prefix)),
+                "cabinet",
+            )
+        else:
+            specific_cat = _normalize_category(raw_category)
+
         normalized_sku: dict[str, Any] = {
             "sku_id": sku_id,
             "name": item.get("type", sku_id),
-            "category": _normalize_category(item.get("category", "")),
+            "category": specific_cat,
             "width_mm": float(item.get("width_mm", 0)),
             "depth_mm": float(item.get("depth_mm", 0)),
             "height_mm": float(item.get("height_mm", 0)),

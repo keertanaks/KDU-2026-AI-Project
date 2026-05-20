@@ -13,6 +13,11 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# Load .env from repo root so ANTHROPIC_API_KEY is available to all agents.
+from dotenv import load_dotenv
+
+load_dotenv(_REPO_ROOT / ".env", override=True)
+
 import streamlit as st
 
 from components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
@@ -43,12 +48,15 @@ GLOBAL_CSS = """
 [data-testid="stMain"],
 .main .block-container { background-color: #0D1117!important; color: #E6EDF3!important; }
 
+[data-testid="stHeader"] { background-color: #0D1117!important; }
+
 [data-testid="stSidebar"] > div:first-child {
     background-color: #161B22!important;
     border-right: 1px solid #30363D;
+    padding-top: 1rem!important;
 }
 
-.block-container { padding-top: 1.5rem!important; }
+.block-container { padding-top: 2.5rem!important; }
 
 [data-testid="stTabs"] button { color: #8B949E!important; border-bottom: 2px solid transparent; }
 [data-testid="stTabs"] button[aria-selected="true"] {
@@ -118,11 +126,11 @@ def _get(obj: object, key: str, default: Any = None) -> Any:
 # Startup — load output.json if present
 # ============================================================================
 
-if "result" not in st.session_state and Path("output.json").exists():
+if "result" not in st.session_state and Path("latest_run.json").exists():
     try:
-        st.session_state["result"] = json.loads(Path("output.json").read_text())
+        st.session_state["result"] = json.loads(Path("latest_run.json").read_text())
     except Exception as e:
-        logger.error("failed to load output.json: %s", e)
+        logger.error("failed to load latest_run.json: %s", e)
 
 # ============================================================================
 # Sidebar
@@ -145,8 +153,20 @@ with st.sidebar:
     must_have = st.multiselect(
         "Must include", ["Dishwasher", "Hood", "Island", "Oven", "Microwave"]
     )
-    avoid = st.multiselect("Avoid", ["Double sink", "Island", "Tall cabinets"])
-    generate = st.button("✨ Generate Layouts", type="primary", use_container_width=True)
+    avoid = st.multiselect(
+        "Avoid",
+        [
+            "Double sink",
+            "Island",
+            "Tall cabinets",
+            "Wall cabinets",
+            "Dishwasher",
+            "Hood",
+            "Base cabinet narrow",
+            "Open shelving",
+        ],
+    )
+    generate = st.button("✨ Generate Layouts", type="primary", width="stretch")
 
 if generate and input_json:
     input_json.setdefault("preferences", {})
@@ -218,7 +238,7 @@ with tab2:
 
                 img = f"renders/{v_id}_top.png"
                 if Path(img).exists():
-                    st.image(img, use_container_width=True)
+                    st.image(img, width="stretch")
 
                 st.markdown(zone_pills_html(layout), unsafe_allow_html=True)
 
@@ -241,7 +261,12 @@ with tab2:
 
                 rows: list[dict[str, Any]] = []
                 for name, item in layout.items():
-                    if item.get("is_wall") or item.get("is_floor"):
+                    if (
+                        item.get("is_wall")
+                        or item.get("is_floor")
+                        or item.get("is_door")
+                        or item.get("is_window")
+                    ):
                         continue
                     pos = item.get("position_mm", {})
                     rows.append(
@@ -255,7 +280,7 @@ with tab2:
                         }
                     )
                 if rows:
-                    st.dataframe(rows, use_container_width=True, hide_index=True)
+                    st.dataframe(rows, width="stretch", hide_index=True)
 
 # ============================================================================
 # Tab 3 — Catalog & MCP
@@ -295,7 +320,7 @@ with tab3:
     ]
     st.dataframe(
         [{"Tool": t, "Status": "✅ Ready", "Description": d} for t, d in MCP_TOOLS],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -407,4 +432,4 @@ with tab4:
                     "Items": int(_get(variant, "placement_count") or 0),
                 }
             )
-        st.dataframe(comparison_rows, use_container_width=True, hide_index=True)
+        st.dataframe(comparison_rows, width="stretch", hide_index=True)

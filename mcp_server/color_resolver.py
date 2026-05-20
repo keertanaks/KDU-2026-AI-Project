@@ -1,67 +1,128 @@
 """Resolve natural language color descriptions to catalog hex codes.
 
-Uses Claude to interpret color keywords, then matches against catalog colors
-using CIE76 delta-E distance in Lab color space.
+Uses a static lookup table for keyword → hex resolution (zero LLM cost),
+then matches against catalog colors using CIE76 delta-E distance in Lab color space.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
-import anthropic
-from colormath.color_conversions import convert_color
-from colormath.color_diff import delta_e_cie1976 as delta_e_cie76
-from colormath.color_objects import LabColor, sRGBColor
-
 from utils.logger import get_logger
-from utils.model_selector import for_agent
 
 logger = get_logger(__name__)
 
 # Delta-E tolerance for color matching (CIE Lab distance)
 DELTA_E_TOLERANCE = 15.0
 
+# Static color keyword → hex lookup table.
+# Kept in sync with Agent 1's system prompt color reference table.
+# Keys are lowercase, spaces normalised to hyphens.
+# Kept in sync with COLOR_KEYWORD_HEX in agents/prompt_parser.py and the catalog
+_COLOR_TABLE: dict[str, str] = {
+    "white": "FFFFFF",
+    "matte white": "EDEDE9",
+    "matte-white": "EDEDE9",
+    "shaker white": "E8E2D5",
+    "shaker-white": "E8E2D5",
+    "off white": "F5F0E8",
+    "off-white": "F5F0E8",
+    "warm white": "FAF8F5",
+    "warm-white": "FAF8F5",
+    "cream": "F5E6CA",
+    "soft grey": "B0B8BE",
+    "soft-grey": "B0B8BE",
+    "soft gray": "B0B8BE",
+    "soft-gray": "B0B8BE",
+    "grey": "9CA3AF",
+    "gray": "9CA3AF",
+    "charcoal": "3D3D3D",
+    "graphite": "2A2A2A",
+    "matte black": "2E2E2E",
+    "matte-black": "2E2E2E",
+    "composite black": "2F2F2F",
+    "composite-black": "2F2F2F",
+    "black": "1A1A1A",
+    "oak": "D4A574",
+    "maple": "C8A878",
+    "birch": "DBC59A",
+    "walnut": "6F4E37",
+    "espresso": "4A3328",
+    "stainless steel": "BFC1C2",
+    "stainless-steel": "BFC1C2",
+    "stainless": "BFC1C2",
+    "brushed steel": "B8BABC",
+    "brushed-steel": "B8BABC",
+    "chrome": "D6D8DA",
+    "navy": "1F3A5F",
+    "navy blue": "1F3A5F",
+    "navy-blue": "1F3A5F",
+    "forest green": "2F5233",
+    "forest-green": "2F5233",
+    "sage green": "9CAF88",
+    "sage-green": "9CAF88",
+    "sage": "9CAF88",
+    "terracotta": "C76A4A",
+}
 
-def keyword_to_hex(keyword: str, client: anthropic.Anthropic) -> str:
-    """Convert natural language color keyword to 6-char hex using Claude.
+# Fallback for unknown colors
+_FALLBACK_HEX = "808080"
+
+
+def keyword_to_hex(keyword: str) -> str:
+    """Convert natural language color keyword to 6-char uppercase hex.
+
+    Uses a static lookup table — zero LLM calls, zero cost, deterministic.
+    Falls back to neutral grey if keyword is not in the table.
 
     Args:
         keyword: Color description (e.g., "navy blue", "light gray")
-        client: Anthropic API client
 
     Returns:
-        6-char lowercase hex code (e.g., "1f3a5f")
-
-    Raises:
-        anthropic.APIError: If API call fails
+        6-char uppercase hex code without # (e.g., "1F3A5F")
     """
-    prompt = f"""Convert this color description to a 6-digit hex color code (without the # symbol).
-Return ONLY the hex code, nothing else.
+    key = keyword.strip().lower()
+    hex_code = _COLOR_TABLE.get(key)
 
-Color description: {keyword}"""
-
-    try:
-        model = for_agent("catalog_selector")
-        message = client.messages.create(
-            model=model,
-            max_tokens=10,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        result = message.content[0].text.strip().lower()
-        # Remove # if present and validate
-        if result.startswith("#"):
-            result = result[1:]
-        # Ensure 6 chars
-        hex_code: str = result.zfill(6)[:6]
-
-        logger.debug("Resolved color '%s' to hex %s", keyword, hex_code)
+    if hex_code:
+        logger.debug("Resolved color '%s' → #%s (lookup table)", keyword, hex_code)
         return hex_code
 
-    except anthropic.APIError as e:
-        logger.error("Failed to resolve color keyword '%s': %s", keyword, e)
-        # Fallback to neutral gray
-        return "808080"
+    # Try prefix match for compound names like "dark sage green"
+    for table_key, table_hex in _COLOR_TABLE.items():
+        if table_key in key or key in table_key:
+            logger.debug(
+                "Resolved color '%s' → #%s (partial match on '%s')",
+                keyword, table_hex, table_key,
+            )
+            return table_hex
+
+    logger.warning("Unknown color keyword '%s' — falling back to #%s", keyword, _FALLBACK_HEX)
+    return _FALLBACK_HEX
+
+
+def _hex_to_lab(hex_color: str) -> tuple[float, float, float]:
+    """Convert 6-char hex to CIE Lab (D65 illuminant)."""
+    r = int(hex_color[0:2], 16) / 255.0
+    g = int(hex_color[2:4], 16) / 255.0
+    b = int(hex_color[4:6], 16) / 255.0
+
+    def linearize(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = linearize(r), linearize(g), linearize(b)
+    x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047
+    y = (0.2126729 * r + 0.7151522 * g + 0.0721750 * b) / 1.0
+    z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883
+
+    def f(t: float) -> float:
+        return t ** (1.0 / 3.0) if t > 0.008856 else 7.787 * t + 16.0 / 116.0
+
+    lab_l = 116.0 * f(y) - 16.0
+    lab_a = 500.0 * (f(x) - f(y))
+    lab_b = 200.0 * (f(y) - f(z))
+    return lab_l, lab_a, lab_b
 
 
 def delta_e(hex1: str, hex2: str) -> float:
@@ -75,23 +136,9 @@ def delta_e(hex1: str, hex2: str) -> float:
         Delta-E distance (0 = identical, higher = more different)
     """
     try:
-        # Parse hex to RGB
-        r1 = int(hex1[0:2], 16) / 255.0
-        g1 = int(hex1[2:4], 16) / 255.0
-        b1 = int(hex1[4:6], 16) / 255.0
-
-        r2 = int(hex2[0:2], 16) / 255.0
-        g2 = int(hex2[2:4], 16) / 255.0
-        b2 = int(hex2[4:6], 16) / 255.0
-
-        # Convert to Lab
-        color1 = convert_color(sRGBColor(r1, g1, b1), LabColor)
-        color2 = convert_color(sRGBColor(r2, g2, b2), LabColor)
-
-        # Calculate delta-E
-        distance: float = delta_e_cie76(color1, color2)
-        return distance
-
+        l1, a1, b1 = _hex_to_lab(hex1.lstrip("#"))
+        l2, a2, b2 = _hex_to_lab(hex2.lstrip("#"))
+        return math.sqrt((l1 - l2) ** 2 + (a1 - a2) ** 2 + (b1 - b2) ** 2)
     except (ValueError, IndexError) as e:
         logger.warning("Failed to parse hex colors %s, %s: %s", hex1, hex2, e)
         return float("inf")

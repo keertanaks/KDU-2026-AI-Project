@@ -9,15 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
 from mcp_server.catalog_loader import get_catalog
 from mcp_server.color_resolver import keyword_to_hex, match_catalog_color
 
 logger = logging.getLogger(__name__)
-
-# Initialize Anthropic client for color resolution
-anthropic_client = anthropic.Anthropic()
 
 # Load catalog once at startup
 _CATALOG: dict[str, dict[str, Any]] | None = None
@@ -122,7 +117,7 @@ def resolve_color(keyword: str) -> dict[str, Any]:
     """Convert color keyword to hex and return nearest catalog match."""
     catalog = _get_catalog()
     try:
-        hex_code = keyword_to_hex(keyword, anthropic_client)
+        hex_code = keyword_to_hex(keyword)
         match = match_catalog_color(hex_code, catalog)
         if match:
             matched_sku_id, distance = match

@@ -18,24 +18,30 @@
 input.json → Layer 1 (Spatial Engine) → Layer 2 (Preprocessing: Agent1 + MCP + Agent2)
            → Layer 3 (Zone Planner: Agent3 ×3–5 parallel)
            → Layer 4 (Placement Engine ×3–5 parallel)
-           → NKBA Validator ×3–5 parallel
-           → Layer 5 (Output Generator: Agent4 ×3–5 parallel)
+           → NKBA Validator (auto-generates rationale via lookup table) ×3–5 parallel
+           → Layer 5 (Output Generator: serialize, render) ×3–5 parallel
            → output.json + PNGs → Streamlit UI
 ```
 
 Sequential: Layer 1 → Layer 2
-Parallel: Layer 3, 4, NKBA Validator, Agent 4, Renderer — all per-variant, all parallel
+Parallel: Layer 3, 4, NKBA Validator, Output Generator, Renderer — all per-variant, all parallel
 
 ---
 
 ## Models
 - Agent 1 (Prompt Parser): `claude-haiku-4-5`
 - Agent 2 (Catalog Selector): `claude-haiku-4-5`
-- Agent 3 (Layout Strategist): `claude-sonnet-4-6` primary / `claude-opus-4-7` on retry
-- Agent 4 (Rationale Writer): `claude-haiku-4-5`
+- Agent 3 (Layout Strategist): `claude-sonnet-4-6` primary / `claude-sonnet-4-6` on retry
 
 Retry trigger: score < 0.60 OR WORKFLOW-03 violated OR NKBA-CL-01 violated
-On retry: Agent 3 re-plans with claude-opus-4-7. If retry also fails: keep variant, add warnings[].
+On retry: Agent 3 re-plans with Sonnet. If retry also fails: keep variant, add warnings[].
+
+**Rationale Generation:** No longer an LLM call. NKBA Validator auto-generates rationale
+from violations using a static rule explanation lookup table (zero additional cost).
+
+**Prompt Caching:** All agents use Anthropic's prompt caching on static system prompts and context
+(Agent 1: system prompt; Agent 2: system + catalog JSON; Agent 3: system + geometry template).
+Reduces cost ~10-20% on cached tokens and improves latency on repeat requests.
 
 ---
 
@@ -133,7 +139,6 @@ agents/
   prompt_parser.py      Agent 1 (Haiku)
   catalog_selector.py   Agent 2 (Haiku + MCP)
   layout_strategist.py  Agent 3 (Sonnet / Opus fallback)
-  rationale_writer.py   Agent 4 (Haiku)
 mcp_server/
   server.py             9 MCP tool definitions
   catalog_loader.py     normalization + alias maps

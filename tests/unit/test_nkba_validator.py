@@ -171,15 +171,15 @@ def test_workflow_03_fail_2000mm() -> None:
 
 
 def test_nkba_cl_01_fail_insufficient_clearance() -> None:
-    """Fridge with only 1000mm clearance in a 1500mm-deep room → NKBA-CL-01 violation.
+    """Fridge aisle < 1067mm → NKBA-CL-01 violation.
 
-    Wall points give room depth = max_y - min_y = 1500 - 0 = 1500mm.
-    fridge y=400, depth=100 → clearance = 1500 - 400 - 100 = 1000mm < 1067mm.
+    _min_aisle = room_depth - max_item_depth = 1500 - 700 = 800mm < 1067mm.
+    Uses a small (1500mm deep) room with a deep (700mm) fridge so the aisle is only 800mm.
     """
     validator = NKBAValidator()
     north = Wall(
         name="north_wall",
-        anchor="north_wall",
+        anchor="north",
         length_mm=6000.0,
         height_mm=2400.0,
         thickness_mm=100.0,
@@ -188,7 +188,7 @@ def test_nkba_cl_01_fail_insufficient_clearance() -> None:
     )
     south = Wall(
         name="south_wall",
-        anchor="south_wall",
+        anchor="south",
         length_mm=6000.0,
         height_mm=2400.0,
         thickness_mm=100.0,
@@ -201,12 +201,13 @@ def test_nkba_cl_01_fail_insufficient_clearance() -> None:
         "Refrigerator",
         "refrigerator",
         x=0.0,
-        y=400.0,
+        y=100.0,
         z=0.0,
         width=600.0,
-        depth=100.0,
+        depth=700.0,  # deep fridge: aisle = 1500 - 700 = 800mm < 1067mm
         height=1800.0,
         zone_type="cooling",
+        wall="north_wall",
     )
     result = validator.validate(_placed({"FR-01": fridge}), spatial, _preprocessing())
     violated_ids = {v["rule_id"] for v in result.violations}
@@ -249,19 +250,22 @@ def test_layout_02_fail_no_hood() -> None:
 # ============================================================================
 
 
-def test_score_above_1_when_no_spillover_no_weighted_violations() -> None:
-    """No spillover, no weighted-rule violations → score > 1.0 (NKBA compliance bonus).
+def test_score_capped_at_0_95_when_only_unweighted_violations() -> None:
+    """Empty layout has NKBA-19/NKBA-25 violations → any_violation cap clamps score to 0.95.
 
-    An empty layout still trips some unweighted structural rules (NKBA-06, NKBA-19,
-    NKBA-25).  Those carry weight=0 so they don't reduce the score below 1.0.
-    The compliance bonus (passed/total * 0.30) keeps score above 1.0.
+    The raw formula 1.0 + compliance_bonus would exceed 1.0. The any_violation
+    cap (0.95) fires because violated_ids is non-empty, even though those
+    violations carry weight=0. No weighted rule is violated so weight_penalty=0
+    and no tighter cap (collision→0.80, layout_run→0.88) applies.
     """
     validator = NKBAValidator()
     result = validator.validate(_placed({}), _spatial(), _preprocessing())
-    assert result.score > 1.0
+    assert result.score == 0.95
     assert result.spillover_count == 0
     # No weighted rules should be violated on an empty layout
     from pipeline.nkba_validator import RULE_WEIGHTS
 
     weighted_violated = {v["rule_id"] for v in result.violations} & set(RULE_WEIGHTS)
     assert not weighted_violated, f"Unexpected weighted violations: {weighted_violated}"
+    # Score debug must document the cap
+    assert "any_violation->0.95" in result.score_debug.get("caps_applied", [])
