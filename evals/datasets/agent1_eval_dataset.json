@@ -1,0 +1,102 @@
+[
+  {
+    "test_id": "a1_01",
+    "prompt": "I want a modern navy blue L-shaped kitchen with a dishwasher",
+    "expected": {"color_keyword": "navy blue", "layout_family": "L", "style": "modern", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_02",
+    "prompt": "Give me a cheap galley kitchen, white cabinets, no frills",
+    "expected": {"color_keyword": "white", "layout_family": "I", "style": null, "budget_tier": "low", "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_03",
+    "prompt": "Something minimalist, no specific shape preference",
+    "expected": {"color_keyword": null, "layout_family": null, "style": "minimalist", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_04",
+    "prompt": "Cosy kitchen, something that feels homey and warm",
+    "expected": {"color_keyword": null, "layout_family": null, "style": null, "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_05",
+    "prompt": "I need an affordable kitchen, budget is tight",
+    "expected": {"color_keyword": null, "layout_family": null, "style": null, "budget_tier": "low", "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_06",
+    "prompt": "Premium luxury bespoke kitchen, sparing no expense",
+    "expected": {"color_keyword": null, "layout_family": null, "style": null, "budget_tier": "premium", "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_07",
+    "prompt": "I want a shaker style kitchen with walnut cabinets and a U-shape",
+    "expected": {"color_keyword": "walnut", "layout_family": "U", "style": "shaker", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_08",
+    "prompt": "Traditional oak kitchen, I also want AC and good lighting",
+    "expected": {"color_keyword": "oak", "layout_family": null, "style": "traditional", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_09",
+    "prompt": "High-end modern kitchen with base cabinets only, no wall cabinets",
+    "expected": {"color_keyword": null, "layout_family": null, "style": "modern", "budget_tier": "high", "cabinet_preference": "base_only"}
+  },
+  {
+    "test_id": "a1_10",
+    "prompt": "Mid-range sage green kitchen with floor-to-ceiling cabinets and an island",
+    "expected": {"color_keyword": "sage green", "layout_family": null, "style": null, "budget_tier": "mid", "cabinet_preference": "with_tall"}
+  },
+  {
+    "test_id": "a1_11",
+    "prompt": "I want navy blue L-shape but also white walls — make it modern and cheap",
+    "expected": {"color_keyword": "navy blue", "layout_family": "L", "style": "modern", "budget_tier": "low", "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_12",
+    "prompt": "Something 🌿 natural and earthy 🌿, maybe walnut or oak, open feel",
+    "expected": {"color_keyword": "walnut", "layout_family": null, "style": null, "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_13",
+    "prompt": "I want a kitchen with modern design principles but also with traditional materials like solid oak doors, classic panelling, and timeless finishes that will age well and not go out of style within the next ten years while still incorporating some contemporary elements like handleless base units and a sleek integrated refrigerator",
+    "expected": {"color_keyword": "oak", "layout_family": null, "style": "modern", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_14",
+    "prompt": "Cuisine moderne avec armoires en chêne, please",
+    "expected": {"color_keyword": "oak", "layout_family": null, "style": "modern", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_15",
+    "prompt": "Just a kitchen, I don't care really",
+    "expected": {"color_keyword": null, "layout_family": null, "style": null, "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_16",
+    "prompt": "I want navy blue cabinets but also forest green tiles on the walls",
+    "expected": {"color_keyword": "navy blue", "layout_family": null, "style": null, "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_17",
+    "prompt": "Something kinda high-end? Not sure about budget, maybe around mid-range",
+    "expected": {"color_keyword": null, "layout_family": null, "style": null, "budget_tier": "mid", "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_18",
+    "prompt": "Modern navy kitchen but I want a traditional layout, something classic but sleek",
+    "expected": {"color_keyword": "navy blue", "layout_family": null, "style": "modern", "budget_tier": null, "cabinet_preference": null}
+  },
+  {
+    "test_id": "a1_19",
+    "prompt": "I want upper cabinets for extra storage with charcoal doors, mid-range budget",
+    "expected": {"color_keyword": "charcoal", "layout_family": null, "style": null, "budget_tier": "mid", "cabinet_preference": "with_uppers"}
+  },
+  {
+    "test_id": "a1_20",
+    "prompt": "Rustic farmhouse kitchen, terracotta or warm tones, nothing too expensive",
+    "expected": {"color_keyword": "terracotta", "layout_family": null, "style": "farmhouse", "budget_tier": "low", "cabinet_preference": null}
+  }
+]

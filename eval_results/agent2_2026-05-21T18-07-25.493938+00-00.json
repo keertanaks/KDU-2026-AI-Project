@@ -1,0 +1,15 @@
+{
+  "eval_id": "ba031e28-0e31-46f9-b042-ab25938373d2",
+  "suite_name": "agent2",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:07:25.493938+00:00",
+  "passed": true,
+  "metrics": {
+    "zone_coverage_rate": 1.0,
+    "baseline_guarantee_rate": 1.0,
+    "frontage_compliance_rate": 1.0,
+    "constraints_schema_ok": 1.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

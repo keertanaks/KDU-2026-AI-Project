@@ -1,0 +1,16 @@
+{
+  "eval_id": "502770d3-11cd-4424-92f2-33d2983d4879",
+  "suite_name": "agent1_live",
+  "is_live": true,
+  "timestamp": "2026-05-21T18:24:24.761083+00:00",
+  "passed": true,
+  "metrics": {
+    "field_accuracy": 0.8205128205128205,
+    "color_accuracy": 0.7692307692307693,
+    "layout_family_accuracy": 1.0,
+    "mean_latency_ms": 1584.3999999997322,
+    "cache_hit_rate": null
+  },
+  "failures": [],
+  "latency_ms": 31703.000000008615
+}

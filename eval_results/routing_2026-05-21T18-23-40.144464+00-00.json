@@ -1,0 +1,13 @@
+{
+  "eval_id": "928b7337-473e-4464-bdb6-9941bc40db25",
+  "suite_name": "routing",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:23:40.144464+00:00",
+  "passed": true,
+  "metrics": {
+    "routing_logic_pass_rate": 1.0,
+    "cases_tested": 16.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

@@ -1,0 +1,14 @@
+{
+  "eval_id": "82919ed0-07f3-4a38-9781-1a733e0e608f",
+  "suite_name": "agent3",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:12:15.897530+00:00",
+  "passed": true,
+  "metrics": {
+    "semantic_term_validity_rate": 1.0,
+    "detection_rate": 1.0,
+    "zone_completeness_rate": 1.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

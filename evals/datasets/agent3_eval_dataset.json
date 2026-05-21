@@ -1,0 +1,134 @@
+[
+  {
+    "test_id": "a3_d01",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 0}, {"x": 3600, "y": 3200, "z": 0}, {"x": 0, "y": 3200, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []}
+        ],
+        "openings": []
+      },
+      "preferences": {"budget_tier": "high", "must_have": ["dishwasher", "hood"], "avoid": [], "prompt": "Modern navy blue L-shaped kitchen"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_d02",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 4200, "y": 0, "z": 0}, {"x": 4200, "y": 3000, "z": 0}, {"x": 0, "y": 3000, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3000, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3000, "height": 2700}, "points": []}
+        ],
+        "openings": [
+          {"id": "north_window", "kind": "window", "wall": "north", "offset_mm": 1500, "width_mm": 1200, "height_mm": 1200, "sill_mm": 900, "center_mm": {"x": 2100, "y": 3000, "z": 1500}}
+        ]
+      },
+      "preferences": {"budget_tier": "mid", "must_have": ["dishwasher", "hood"], "avoid": [], "prompt": "Shaker kitchen with sink near window"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_d03",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 4200, "y": 0, "z": 0}, {"x": 4200, "y": 4200, "z": 0}, {"x": 0, "y": 4200, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []}
+        ],
+        "openings": []
+      },
+      "preferences": {"budget_tier": "high", "must_have": ["dishwasher", "hood"], "avoid": [], "prompt": "U-shaped kitchen maximising work triangle"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_d04",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 0}, {"x": 3600, "y": 3200, "z": 0}, {"x": 0, "y": 3200, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []}
+        ],
+        "openings": []
+      },
+      "preferences": {"budget_tier": "low", "must_have": [], "avoid": [], "prompt": "Budget galley I-shape kitchen"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_d05",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 4200, "y": 0, "z": 0}, {"x": 4200, "y": 3000, "z": 0}, {"x": 0, "y": 3000, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3000, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3000, "height": 2700}, "points": []}
+        ],
+        "openings": [
+          {"id": "south_door", "kind": "door", "wall": "south", "offset_mm": 600, "width_mm": 900, "height_mm": 2100, "sill_mm": 0},
+          {"id": "north_window", "kind": "window", "wall": "north", "offset_mm": 1500, "width_mm": 1200, "height_mm": 1200, "sill_mm": 900},
+          {"id": "east_window",  "kind": "window", "wall": "east",  "offset_mm": 600,  "width_mm": 800,  "height_mm": 1200, "sill_mm": 900}
+        ]
+      },
+      "preferences": {"budget_tier": "mid", "must_have": ["dishwasher", "hood"], "avoid": ["double_sink"], "prompt": "I want navy blue base cabinets"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_d06",
+    "room_input": {
+      "environment": {
+        "floor": {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 4200, "y": 0, "z": 0}, {"x": 4200, "y": 4200, "z": 0}, {"x": 0, "y": 4200, "z": 0}]},
+        "wall": [
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []},
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 4200, "height": 2700}, "points": []}
+        ],
+        "openings": []
+      },
+      "preferences": {"budget_tier": "high", "must_have": ["dishwasher", "hood"], "avoid": [], "prompt": "I want navy blue base cabinets"}
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "zone_assignment_complete": true,
+      "work_triangle_ok": true
+    }
+  }
+]

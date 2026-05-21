@@ -1,0 +1,16 @@
+{
+  "eval_id": "f9ee915e-dc97-4c15-b451-850f781f32ef",
+  "suite_name": "e2e",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:07:25.505339+00:00",
+  "passed": true,
+  "metrics": {
+    "output_schema_ok": 1.0,
+    "variants_above_threshold": 1.0,
+    "nkba_field_present_rate": 1.0,
+    "placement_count_ok_rate": 1.0,
+    "null_position_rate": 0.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}
