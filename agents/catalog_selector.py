@@ -22,8 +22,11 @@ ZONE_CATEGORY_MAP: dict[str, str] = {
     "dishwasher": "cleaning",
     "stove": "cooking",
     "range": "cooking",
+    "cooktop": "cooking",
     "hood": "cooking",
     "oven": "cooking",
+    "microwave": "cooking",
+    "coffee_machine": "cooking",
     "base_cabinet": "preparation",
     "wall_cabinet": "storage",
     "tall_cabinet": "storage",
@@ -36,6 +39,10 @@ MUST_HAVE_CATEGORY_MAP: dict[str, str] = {
     "fridge": "refrigerator",
     "refrigerator": "refrigerator",
     "sink": "sink",
+    "microwave": "microwave",
+    "oven": "oven",
+    "coffee machine": "coffee_machine",
+    "coffee_machine": "coffee_machine",
     "island": "base_cabinet",
     "pantry": "tall_cabinet",
 }
@@ -80,7 +87,7 @@ WALL_CAPACITY_RATIO: float = 0.85
 # Standard widths (mm) the Placement Engine needs for tight gap-fill packing.
 # At least one base_cabinet of each width is added to the pool regardless of
 # whether frontage is already satisfied — Placement Engine decides what fits.
-GAP_FILL_WIDTHS: list[float] = [1200.0, 900.0, 750.0, 600.0, 450.0]
+GAP_FILL_WIDTHS: list[float] = [1200.0, 900.0, 750.0, 600.0, 450.0, 300.0]
 # Accept a catalog size within this many mm of the target as "close enough".
 GAP_FILL_WIDTH_TOLERANCE_MM: float = 100.0
 
@@ -151,6 +158,7 @@ class CatalogSelector:
             skus = self._ensure_must_have(skus, intent, filtered)
             skus = self._ensure_color_match(skus, intent, filtered)
             skus = self._ensure_baseline(skus, intent, filtered, spatial_output)
+            skus = self._ensure_wall_corner_cabs(skus, intent, filtered)
             zone_groups = self._group_by_zone(skus)
             zone_min_widths = self._compute_zone_min_widths(zone_groups)
             nkba_constraints = self._build_nkba_constraints(skus)
@@ -209,9 +217,7 @@ class CatalogSelector:
                     catalog[sid] = d
             added = sum(1 for d in catalog.values() if d.get("category") in cabinetry_cats)
             if added:
-                logger.info(
-                    "Added %d color-matching cabinets (cross-budget)", added
-                )
+                logger.info("Added %d color-matching cabinets (cross-budget)", added)
 
         return catalog
 
@@ -235,22 +241,18 @@ class CatalogSelector:
         filtered: dict[str, dict[str, Any]] = {}
         removed_islands = 0
         removed_builtins = 0
-        has_tall_cab = any(
-            d.get("category") == "tall_cabinet" for d in catalog.values()
-        )
+        has_tall_cab = any(d.get("category") == "tall_cabinet" for d in catalog.values())
         for sid, d in catalog.items():
             cat = d.get("category", "").lower()
             name = d.get("name", "").lower()
             # Islands: only for large rooms or when explicitly requested
-            if (
-                cat == "island"
-                and capacity not in ("XL", "L+")
-                and "island" not in requested
-            ):
+            if cat == "island" and capacity not in ("XL", "L+") and "island" not in requested:
                 removed_islands += 1
                 continue
-            # Built-in ovens: only if a tall cabinet exists to host them
-            if "built_in" in name and not has_tall_cab:
+            # Built-in ovens require a tall cabinet to host them (microwaves/coffee go
+            # into wall-cabinet space, not tall cabs — exclude them from this filter).
+            is_oven_builtin = "oven" in name and "built_in" in name
+            if is_oven_builtin and not has_tall_cab:
                 removed_builtins += 1
                 continue
             filtered[sid] = d
@@ -305,7 +307,12 @@ class CatalogSelector:
             "Rules:\n"
             "- Select at least one SKU per zone: "
             "cooling, cleaning, cooking, preparation, storage\n"
+            "- When the catalog has color_set groups (e.g. ivory_white, sage_green): "
+            "pick ALL cabinets (base, wall, corner, tall) from the SAME color_set that "
+            "best matches the user's color request. Do NOT mix color sets.\n"
             "- Prefer SKUs whose style matches the intent style\n"
+            "- For microwave/oven: if user wants countertop, pick placement=counter_top; "
+            "if built-in or no preference, pick placement=built_in\n"
             "- Never invent SKU IDs — only use IDs from the provided catalog\n"
             "- Respond only via the select_skus tool"
         )
@@ -330,8 +337,9 @@ class CatalogSelector:
 
     def _catalog_summary(self, catalog: dict[str, dict[str, Any]]) -> str:
         """Compact JSON summary of catalog for LLM context."""
-        rows = [
-            {
+        rows = []
+        for sid, d in catalog.items():
+            row: dict[str, Any] = {
                 "sku_id": sid,
                 "name": d.get("name"),
                 "category": d.get("category"),
@@ -339,8 +347,11 @@ class CatalogSelector:
                 "price_tier": d.get("price_tier"),
                 "style": d.get("style"),
             }
-            for sid, d in catalog.items()
-        ]
+            if d.get("color_set"):
+                row["color_set"] = d["color_set"]
+            if d.get("placement"):
+                row["placement"] = d["placement"]
+            rows.append(row)
         return json.dumps(rows, indent=2)
 
     def _build_tool_schema(self) -> dict[str, Any]:
@@ -381,6 +392,8 @@ class CatalogSelector:
             needs_water=bool(data.get("needs_water", False)),
             needs_power=bool(data.get("needs_power", False)),
             must_attach_to=data.get("must_attach_to", ""),
+            placement=data.get("placement", ""),
+            color_set=data.get("color_set", ""),
         )
 
     def _resolve_skus(
@@ -398,9 +411,7 @@ class CatalogSelector:
             skus[sid] = self._make_sku(sid, data)
         return skus
 
-    def _apply_cabinet_preference(
-        self, skus: dict[str, SKU], intent: IntentDTO
-    ) -> dict[str, SKU]:
+    def _apply_cabinet_preference(self, skus: dict[str, SKU], intent: IntentDTO) -> dict[str, SKU]:
         """Strip cabinet types the user explicitly excluded via cabinet_preference."""
         pref = intent.cabinet_preference
         if pref == "base_only":
@@ -412,9 +423,7 @@ class CatalogSelector:
             }
             removed = len(skus) - len(filtered)
             if removed:
-                logger.info(
-                    "cabinet_preference=base_only: removed %d wall/tall cabinets", removed
-                )
+                logger.info("cabinet_preference=base_only: removed %d wall/tall cabinets", removed)
             return filtered
         return skus
 
@@ -440,21 +449,24 @@ class CatalogSelector:
         )
         if has_color_cab:
             return skus
-        # Find best matching base_cabinet from filtered catalog
-        candidates = [
-            (sid, d, delta_e(target, d.get("color", "000000")))
-            for sid, d in filtered_catalog.items()
-            if d.get("category") == "base_cabinet" and sid not in skus
-        ]
-        candidates = [c for c in candidates if c[2] <= COLOR_DELTA_E_TOLERANCE]
-        if not candidates:
-            return skus
-        candidates.sort(key=lambda c: c[2])
-        sid, data, de = candidates[0]
-        skus[sid] = self._make_sku(sid, data)
-        logger.info(
-            "Force-added color-matching cabinet '%s' (delta-E %.1f)", sid, de
-        )
+        # Find best matching cabinet (prefer base_cabinet, then wall_cabinet) from filtered catalog
+        for cat_filter in ("base_cabinet", "wall_cabinet"):
+            candidates = [
+                (sid, d, delta_e(target, d.get("color", "000000")))
+                for sid, d in filtered_catalog.items()
+                if d.get("category") == cat_filter
+                and "corner" not in d.get("name", "").lower()
+                and sid not in skus
+            ]
+            candidates = [c for c in candidates if c[2] <= COLOR_DELTA_E_TOLERANCE]
+            if candidates:
+                candidates.sort(key=lambda c: c[2])
+                sid, data, de = candidates[0]
+                skus[sid] = self._make_sku(sid, data)
+                logger.info(
+                    "Force-added color-matching %s '%s' (delta-E %.1f)", cat_filter, sid, de
+                )
+                return skus
         return skus
 
     def _apply_avoid(self, skus: dict[str, SKU], intent: IntentDTO) -> dict[str, SKU]:
@@ -491,23 +503,62 @@ class CatalogSelector:
         Tries filtered catalog first; if not found, falls back to full catalog
         then to the adjacent budget tier.
         """
+        # Detect explicit built-in preference from the raw prompt text
+        raw_text = " ".join(intent.must_have + intent.special_requests).lower()
+        wants_builtin = "built_in" in raw_text or "built-in" in raw_text
+
         requests = list(dict.fromkeys(intent.must_have + intent.special_requests))
         for req in requests:
             mapped = MUST_HAVE_CATEGORY_MAP.get(req.lower(), req.lower())
-            if any(mapped in s.category.lower() or mapped in s.name.lower() for s in skus.values()):
-                continue
+
+            # For microwave/oven: prefer countertop unless the user explicitly asked
+            # for built-in. Countertop is the default residential choice — it sits on
+            # the worktop and doesn't need a dedicated upper-cabinet slot.
+            is_microwave_or_oven = mapped in ("microwave", "oven")
+            prefer_countertop = is_microwave_or_oven and not wants_builtin
+
+            # Check if category is already present
+            existing = [
+                (sid, s)
+                for sid, s in skus.items()
+                if mapped in s.category.lower() or mapped in s.name.lower()
+            ]
+            if existing:
+                # If we prefer countertop but only have built-in versions, swap them
+                if prefer_countertop and not any(s.placement == "counter_top" for _, s in existing):
+                    # Remove built-in versions and fall through to counter_top search
+                    for sid, _ in existing:
+                        del skus[sid]
+                        logger.info(
+                            "Swapping built-in '%s' for counter_top version (prefer_countertop)",
+                            sid,
+                        )
+                else:
+                    continue  # already satisfied
 
             # Search filtered catalog, then full catalog
             search_order = [filtered_catalog, self._catalog]
             placed = False
             for source in search_order:
-                for sid, data in source.items():
-                    cat = data.get("category", "").lower()
-                    name = data.get("name", "").lower()
-                    if mapped in cat or mapped in name:
-                        skus[sid] = self._make_sku(sid, data)
-                        logger.info("Added must-have SKU '%s' for request '%s'", sid, req)
-                        placed = True
+                # Two-pass: if countertop preferred, try counter_top first then fallback
+                passes = (
+                    [
+                        {k: v for k, v in source.items() if v.get("placement") == "counter_top"},
+                        source,
+                    ]
+                    if prefer_countertop
+                    else [source]
+                )
+                for src_pass in passes:
+                    for sid, data in src_pass.items():
+                        cat = data.get("category", "").lower()
+                        name = data.get("name", "").lower()
+                        if mapped in cat or mapped in name:
+                            skus[sid] = self._make_sku(sid, data)
+                            logger.info("Added must-have SKU '%s' for request '%s'", sid, req)
+                            placed = True
+                            break
+                    if placed:
                         break
                 if placed:
                     break
@@ -519,6 +570,15 @@ class CatalogSelector:
                     mapped,
                 )
         return skus
+
+    def _dominant_color_set(self, skus: dict[str, SKU]) -> str:
+        """Return the most-used color_set among selected cabinetry SKUs, or ''."""
+        counts: dict[str, int] = {}
+        for s in skus.values():
+            cs = s.color_set
+            if cs:
+                counts[cs] = counts.get(cs, 0) + 1
+        return max(counts, key=lambda k: counts[k]) if counts else ""
 
     def _ensure_baseline(
         self,
@@ -563,7 +623,7 @@ class CatalogSelector:
                     if category_kw not in cat and category_kw not in name:
                         continue
                     # Skip SKUs whose name/category matches an avoid keyword
-                    combined = (name + " " + cat)
+                    combined = name + " " + cat
                     combined_words = set(combined.replace("_", " ").split())
                     if any(
                         kw in combined
@@ -579,6 +639,56 @@ class CatalogSelector:
                     break
             if not placed:
                 logger.warning("Baseline category '%s' not found in any catalog", category_kw)
+
+        # Ensure a base corner cabinet is present for multi-wall layouts (L/U)
+        # so structural corners are always filled by a dedicated corner cabinet,
+        # preventing the fridge from landing at the wall junction.
+        corner_kws = ("corner_cabinet", "blind_corner", "base_corner")
+        avoid_corner = any(kw in avoid_kw for kw in corner_kws)
+        if not avoid_corner and intent.cabinet_preference != "base_only":
+            cabinet_walls = [w for w in spatial.walls if w.has_cabinets]
+            if len(cabinet_walls) >= 2:
+                has_corner_cab = any(
+                    any(kw in (s.category + " " + s.name).lower() for kw in corner_kws)
+                    for s in skus.values()
+                )
+                if not has_corner_cab:
+                    # Prefer corner cab from the same color_set as selected cabs,
+                    # then fall back to closest color by delta-E.
+                    dom_set = self._dominant_color_set(skus)
+                    target_hex = intent.color_hex.lstrip("#") if intent.color_hex else None
+                    best_sid: str | None = None
+                    best_data: dict[str, Any] | None = None
+                    best_score = float("inf")
+                    for source in (filtered_catalog, self._catalog):
+                        for sid, data in source.items():
+                            if sid in skus:
+                                continue
+                            n = data.get("name", "").lower()
+                            t = data.get("type", "").lower()
+                            is_corner = any(kw in n or kw in t for kw in corner_kws)
+                            is_wall_corner = "wall_corner" in n or "wall_corner" in t
+                            if not is_corner or is_wall_corner:
+                                continue
+                            # Score: same color_set = 0, otherwise delta-E
+                            cs = data.get("color_set", "")
+                            if dom_set and cs == dom_set:
+                                score = 0.0
+                            elif target_hex:
+                                score = delta_e(target_hex, data.get("color", "000000"))
+                            else:
+                                score = 50.0
+                            if score < best_score:
+                                best_score = score
+                                best_sid = sid
+                                best_data = data
+                    if best_sid and best_data:
+                        skus[best_sid] = self._make_sku(best_sid, best_data)
+                        logger.info(
+                            "Added corner base cabinet '%s' for multi-wall layout (score=%.1f)",
+                            best_sid,
+                            best_score,
+                        )
 
         # Top up base cabinets until NKBA-25 frontage requirement is met.
         # For I-shape, only ONE wall holds items — capping by sum of all cabinet
@@ -616,10 +726,20 @@ class CatalogSelector:
         if current >= MIN_BASE_CABINET_FRONTAGE_MM:
             return skus
 
-        floor_kw = ("base_cabinet", "sink", "stove", "range", "fridge", "refrigerator",
-                     "dishwasher", "oven", "tall_cabinet")
+        floor_kw = (
+            "base_cabinet",
+            "sink",
+            "stove",
+            "range",
+            "fridge",
+            "refrigerator",
+            "dishwasher",
+            "oven",
+            "tall_cabinet",
+        )
         floor_width = sum(
-            s.width_mm for s in skus.values()
+            s.width_mm
+            for s in skus.values()
             if any(kw in s.category.lower() or kw in s.name.lower() for kw in floor_kw)
         )
         max_floor_width = cabinet_wall_length * WALL_CAPACITY_RATIO
@@ -630,6 +750,7 @@ class CatalogSelector:
         # placement engine to slam them into the NW corner where the fridge wants
         # to live → collision. Corner cabs should only enter via Agent 2's explicit
         # selection or via must_have. Detect by name (e.g. "corner_cabinet_900").
+        dom_set = self._dominant_color_set(skus)
         candidates = sorted(
             [
                 (sid, data)
@@ -640,8 +761,11 @@ class CatalogSelector:
                 and "corner" not in data.get("type", "").lower()
                 and sid not in skus
             ],
-            key=lambda t: float(t[1].get("width_mm", 0)),
-            reverse=True,
+            # Sort: same color_set first, then widest-first within each group
+            key=lambda t: (
+                0 if (dom_set and t[1].get("color_set", "") == dom_set) else 1,
+                -float(t[1].get("width_mm", 0)),
+            ),
         )
         seen: set[str] = set()
         for sid, data in candidates:
@@ -685,6 +809,7 @@ class CatalogSelector:
         are left unfilled. Searches filtered catalog first, then full catalog.
         Does NOT check the wall-capacity ratio — Placement Engine decides fit.
         """
+        dom_set_gf = self._dominant_color_set(skus)
         for target_w in GAP_FILL_WIDTHS:
             already_have = any(
                 "base_cabinet" in s.category.lower()
@@ -695,7 +820,7 @@ class CatalogSelector:
                 continue
             best_sid: str | None = None
             best_data: dict[str, Any] | None = None
-            best_delta = float("inf")
+            best_score = float("inf")
             for source in (filtered_catalog, self._catalog):
                 for sid, data in source.items():
                     if "base_cabinet" not in data.get("category", "").lower():
@@ -708,11 +833,16 @@ class CatalogSelector:
                     if sid in skus:
                         continue
                     delta = abs(float(data.get("width_mm", 0)) - target_w)
-                    if delta < best_delta and delta <= GAP_FILL_WIDTH_TOLERANCE_MM:
-                        best_delta = delta
+                    if delta > GAP_FILL_WIDTH_TOLERANCE_MM:
+                        continue
+                    # Score: same color_set = delta; other sets = delta + 1000
+                    cs = data.get("color_set", "")
+                    score = delta if (dom_set_gf and cs == dom_set_gf) else delta + 1000.0
+                    if score < best_score:
+                        best_score = score
                         best_sid = sid
                         best_data = data
-                if best_sid:
+                if best_sid and best_score < 500.0:  # found a same-set match
                     break
             if best_sid and best_data:
                 skus[best_sid] = self._make_sku(best_sid, best_data)
@@ -722,6 +852,67 @@ class CatalogSelector:
                     float(best_data.get("width_mm", 0)),
                     target_w,
                 )
+        return skus
+
+    def _ensure_wall_corner_cabs(
+        self,
+        skus: dict[str, SKU],
+        intent: IntentDTO,
+        filtered_catalog: dict[str, dict[str, Any]],
+    ) -> dict[str, SKU]:
+        """Add wall corner cabs when base corner cabs are selected and wall cabs allowed.
+
+        Picks a wall_corner SKU in the same color as selected cabinets so the
+        upper corner row is visually consistent with the rest of the wall run.
+        """
+        if intent.cabinet_preference == "base_only":
+            return skus
+
+        base_corner_kws = ("corner_cabinet", "blind_corner", "base_corner")
+        has_base_corner = any(
+            any(kw in (s.category + " " + s.name).lower() for kw in base_corner_kws)
+            for s in skus.values()
+        )
+        if not has_base_corner:
+            return skus
+
+        has_wall_corner = any(
+            "wall_corner" in (s.category + " " + s.name).lower() for s in skus.values()
+        )
+        if has_wall_corner:
+            return skus
+
+        target = intent.color_hex.lstrip("#") if intent.color_hex else None
+        dom_set_wc = self._dominant_color_set(skus)
+        best_sid: str | None = None
+        best_data: dict[str, Any] | None = None
+        best_score = float("inf")
+
+        for source in (filtered_catalog, self._catalog):
+            for sid, data in source.items():
+                if sid in skus:
+                    continue
+                name_lower = data.get("name", "").lower()
+                type_lower = data.get("type", "").lower()
+                if "wall_corner" not in name_lower and "wall_corner" not in type_lower:
+                    continue
+                cs = data.get("color_set", "")
+                if dom_set_wc and cs == dom_set_wc:
+                    score = 0.0
+                elif target:
+                    score = delta_e(target, data.get("color", "000000"))
+                else:
+                    score = 50.0
+                if score < best_score:
+                    best_score = score
+                    best_sid = sid
+                    best_data = data
+            if best_sid and best_score == 0.0:
+                break  # same-color-set match found — no need to search further
+
+        if best_sid and best_data:
+            skus[best_sid] = self._make_sku(best_sid, best_data)
+            logger.info("Added wall corner cab '%s' to pair with base corner", best_sid)
         return skus
 
     # ------------------------------------------------------------------ #

@@ -7,8 +7,8 @@ Consumes ZonePlannerOutput (semantic) and emits PlacementEngineOutput (mm).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from dtos.contracts import (
     SKU,
@@ -59,19 +59,19 @@ _TPL_ZONE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "hood": ("hood", "vent"),
     "tall": ("tall_cabinet", "pantry"),
     "base": ("base_cabinet",),
-    "corner": ("corner_cabinet", "blind_corner"),
+    "corner": ("corner_cabinet", "blind_corner", "base_corner"),
     "wall_cab": ("wall_cabinet",),
 }
 
 # Preferred SKU width per zone per compactness — drives variant diversity.
 _TPL_TARGET_WIDTH: dict[str, dict[str, float]] = {
-    "fridge":     {"spacious": 750, "balanced": 700, "compact": 600},
-    "sink":       {"spacious": 900, "balanced": 600, "compact": 600},
+    "fridge": {"spacious": 750, "balanced": 700, "compact": 600},
+    "sink": {"spacious": 900, "balanced": 600, "compact": 600},
     "dishwasher": {"spacious": 600, "balanced": 600, "compact": 600},
-    "stove":      {"spacious": 750, "balanced": 600, "compact": 600},
-    "base":       {"spacious": 1200, "balanced": 900, "compact": 450},
-    "corner":     {"spacious": 900, "balanced": 900, "compact": 900},
-    "tall":       {"spacious": 800, "balanced": 600, "compact": 600},
+    "stove": {"spacious": 750, "balanced": 600, "compact": 600},
+    "base": {"spacious": 1200, "balanced": 900, "compact": 450},
+    "corner": {"spacious": 900, "balanced": 900, "compact": 900},
+    "tall": {"spacious": 800, "balanced": 600, "compact": 600},
 }
 
 # Map template zone name → zone_type for PlacedItem
@@ -91,7 +91,7 @@ _TPL_ZONE_TYPE: dict[str, str] = {
 _TPL_FILL_CAP_MM: dict[str, float] = {
     "spacious": 1800.0,
     "balanced": 1500.0,
-    "compact":  1200.0,
+    "compact": 1200.0,
 }
 
 # z-mount height for wall cabinets (standard kitchen mount above base cab)
@@ -130,8 +130,8 @@ WALL_END_TOLERANCE_MM: float = 50.0  # fridge within this distance of wall end =
 # Primary wall = wall containing fridge or stove; Secondary = other cabinet walls.
 # I-shape uses no cap (fills the whole single wall).
 _FILL_CAP_MM: dict[str, dict[int, float]] = {
-    "primary":   {1: 1800.0, 2: 1500.0, 3: 1200.0},
-    "secondary": {1: 1200.0, 2: 900.0,  3: 600.0},
+    "primary": {1: 1800.0, 2: 1500.0, 3: 1200.0},
+    "secondary": {1: 1200.0, 2: 900.0, 3: 600.0},
 }
 
 ZONE_WEIGHTS: dict[str, float] = {
@@ -157,27 +157,47 @@ _DEPENDENT_KW: tuple[str, ...] = ("hood", "dishwasher", "tap")
 _DROPPABLE_KW: tuple[str, ...] = ("wall_cabinet", "base_cabinet", "island")
 _FRIDGE_KW: tuple[str, ...] = ("fridge", "refrigerator")
 _TALL_KW: tuple[str, ...] = ("tall_cabinet", "larder", "pantry_cabinet")
-_CORNER_KW: tuple[str, ...] = ("corner_cabinet", "blind_corner")
+# Base-level corner cabinets (floor/structural) — govern cursor offsets and fridge placement
+_BASE_CORNER_KW: tuple[str, ...] = ("corner_cabinet", "blind_corner", "base_corner")
+# Wall-level corner cabinets (upper run) — placed above base corners
+_WALL_CORNER_KW: tuple[str, ...] = ("wall_corner",)
+# All corner types combined — used for collision whitelisting and skip logic
+_CORNER_KW: tuple[str, ...] = _BASE_CORNER_KW + _WALL_CORNER_KW
 _TAP_KW: tuple[str, ...] = ("tap", "faucet", "mixer")
 # Required appliances — never dropped, force-placed with CONSTRAINT_VIOLATION if no clean space
 _REQUIRED_APPLIANCE_KW: tuple[str, ...] = (
-    "fridge", "refrigerator", "sink", "stove", "cooktop", "range",
-    "hood", "dishwasher", "oven", "microwave",
+    "fridge",
+    "refrigerator",
+    "sink",
+    "stove",
+    "cooktop",
+    "range",
+    "hood",
+    "dishwasher",
+    "oven",
+    "microwave",
 )
 # Keywords identifying items that occupy floor-level run space.
 # All of these count as part of the continuous run (LAYOUT-03) and as self-supporting
 # base-level units (LAYOUT-04 adjacency check does not apply to them).
 _FLOOR_RUN_KW: tuple[str, ...] = (
-    "base_cabinet", "corner_cabinet",
-    "sink", "dishwasher",
-    "stove", "range", "cooktop",
-    "fridge", "refrigerator",
+    "base_cabinet",
+    "corner_cabinet",
+    "sink",
+    "dishwasher",
+    "stove",
+    "range",
+    "cooktop",
+    "fridge",
+    "refrigerator",
     "tall_cabinet",
 )
 # Items exempt from run compaction: stay at their placed position.
 # Dependents (hood, tap) are re-anchored separately after compaction.
 _COMPACT_EXEMPT_KW: tuple[str, ...] = (
-    "tap", "faucet", "mixer",
+    "tap",
+    "faucet",
+    "mixer",
     "hood",
     "wall_cabinet",
 )
@@ -217,7 +237,10 @@ class PlacementEngine:
         templates = self._build_wall_run_templates(zone_plan, preprocessing, spatial)
         if templates:
             return self._place_with_templates(
-                zone_plan, preprocessing, spatial, templates,
+                zone_plan,
+                preprocessing,
+                spatial,
+                templates,
             )
 
         placed: dict[str, PlacedItem] = {}
@@ -244,10 +267,7 @@ class PlacementEngine:
                     family=zone_plan.family,
                     wall_strategies={primary: zone_plan.wall_strategies.get(primary, [])},
                     zone_assignments={z: primary for z in zone_plan.zone_assignments},
-                    item_hints={
-                        k: {**v, "wall": primary}
-                        for k, v in zone_plan.item_hints.items()
-                    },
+                    item_hints={k: {**v, "wall": primary} for k, v in zone_plan.item_hints.items()},
                     work_triangle_priority=zone_plan.work_triangle_priority,
                     adjacency_hints=zone_plan.adjacency_hints,
                     avoid_zones=zone_plan.avoid_zones,
@@ -258,15 +278,11 @@ class PlacementEngine:
         # Without this, fridge/stove via item_hints ("at north-west corner",
         # "right end of north_wall") take both corners and CORNER-SKIPPED fires.
         # Only runs for L/U where corner cabs are structural.
-        self._place_corner_cabs_first(
-            zone_plan, preprocessing, spatial, placed, spillover
-        )
+        self._place_corner_cabs_first(zone_plan, preprocessing, spatial, placed, spillover)
 
         # --- Pass 0: place anchored items using item_hints (primary contract) ---
         if zone_plan.item_hints:
-            self._place_by_item_hints(
-                zone_plan, preprocessing, spatial, placed, spillover
-            )
+            self._place_by_item_hints(zone_plan, preprocessing, spatial, placed, spillover)
 
         sorted_walls = sorted(all_walls)
 
@@ -292,24 +308,23 @@ class PlacementEngine:
         # ended up on the same wall, move one zone to the secondary wall so the L
         # is actually used. Runs after Pass 1 so we know where things ended up,
         # before Pass 2 so gap-fill works on the corrected layout.
-        self._maybe_repair_l_secondary_wall(
-            zone_plan, preprocessing, spatial, placed, spillover
-        )
+        self._maybe_repair_l_secondary_wall(zone_plan, preprocessing, spatial, placed, spillover)
         # --- U-shape distribution repair: ensure 3 cabinet walls are used.
-        self._maybe_repair_u_distribution(
-            zone_plan, preprocessing, spatial, placed, spillover
-        )
+        self._maybe_repair_u_distribution(zone_plan, preprocessing, spatial, placed, spillover)
 
         # --- Family run template: enforce canonical wall assignments; remove
         # base cabs placed by Pass 1 that are outside the appliance run span.
-        self._apply_family_run_template(
-            zone_plan, preprocessing, spatial, placed, spillover
-        )
+        self._apply_family_run_template(zone_plan, preprocessing, spatial, placed, spillover)
 
         # --- Pass 2: fill gaps with base cabinets on zone-assigned walls only ---
         self._fill_all_gaps_with_base_cabinets(
-            placed, preprocessing, spatial, spillover, all_walls,
-            zone_plan.variant_id, zone_plan.family,
+            placed,
+            preprocessing,
+            spatial,
+            spillover,
+            all_walls,
+            zone_plan.variant_id,
+            zone_plan.family,
         )
 
         # Log missing base-cabinet support beside each major appliance / sink
@@ -336,14 +351,20 @@ class PlacementEngine:
         # Moves gaps to the run end instead of leaving them between appliances.
         # Dependents (hood, tap) are re-anchored inside the compactor.
         # Must run BEFORE wall-cab alignment so wall cabs track their base cabs.
-        self._compact_wall_runs(placed, preprocessing, spatial, spillover, zone_plan.variant_id, zone_plan.family)
+        self._compact_wall_runs(
+            placed, preprocessing, spatial, spillover, zone_plan.variant_id, zone_plan.family
+        )
 
         # Post-compact gap fill: compaction consolidates items and moves gaps to run
         # ends. Pre-compact gaps were too small (400mm) for any base cabinet; post-
         # compact the consolidated gap (≥600mm) can now accommodate base cabinets.
         self._fill_all_gaps_with_base_cabinets(
-            placed, preprocessing, spatial, spillover,
-            variant_id=zone_plan.variant_id, family=zone_plan.family,
+            placed,
+            preprocessing,
+            spatial,
+            spillover,
+            variant_id=zone_plan.variant_id,
+            family=zone_plan.family,
         )
 
         # Snap wall cabinets above base cabinets (TDD: wall cabs mount ABOVE base cabs)
@@ -353,9 +374,7 @@ class PlacementEngine:
 
         # Phase 2A.2: remove isolated / unsupported / base_only-violating optionals.
         # Family-aware: must preserve typology (L=2 walls, U=3 walls, I=1 wall).
-        self._cleanup_isolated_optionals(
-            placed, preprocessing, spillover, family=zone_plan.family
-        )
+        self._cleanup_isolated_optionals(placed, preprocessing, spillover, family=zone_plan.family)
         self._verify_typology(placed, zone_plan.family, spillover)
 
         if zone_plan.work_triangle_priority:
@@ -442,12 +461,14 @@ class PlacementEngine:
 
         compactness = {1: "spacious", 2: "balanced", 3: "compact"}.get(vidx, "balanced")
 
-        return {primary: WallRunTemplate(
-            wall_name=primary,
-            zones=zones,
-            reverse_axis=False,
-            compactness=compactness,
-        )}
+        return {
+            primary: WallRunTemplate(
+                wall_name=primary,
+                zones=zones,
+                reverse_axis=False,
+                compactness=compactness,
+            )
+        }
 
     def _build_l_templates(
         self,
@@ -514,33 +535,32 @@ class PlacementEngine:
         # Every run terminates with "base" (LAYOUT-05). Outer end = wall-edge,
         # so the last zone in each list ends up at the wall edge / outer end
         # under cursor packing.
-        if vidx == 1:  # spacious — max counter run on primary
-            primary_zones = ["fridge", "base", "stove", "base"]
+        if vidx == 1 or vidx == 2:  # spacious — max counter run on primary
+            primary_zones = ["stove", "base", "fridge"]
             secondary_zones = ["sink", "dishwasher", "base"]
-        elif vidx == 2:  # balanced — tight triangle (sink+stove closer)
-            primary_zones = ["fridge", "base", "sink", "dishwasher", "stove", "base"]
-            secondary_zones = ["base", "base"]
         else:  # compact — minimal, narrower SKUs
-            primary_zones = ["fridge", "stove", "base"]
+            primary_zones = ["stove", "base", "fridge"]
             secondary_zones = ["sink", "dishwasher", "base"]
 
         # Corner cab goes at the cursor's STARTING position so it lands at the
         # meeting corner. With reverse_axis=True (cursor starts at the wall's
         # right end), zones[0] is placed at the right end. With reverse_axis=False
         # (cursor starts at left), zones[0] is placed at the left end.
-        # Either way: corner cab as zones[0] = corner cab at the meeting corner.
+        # Either way: corner cab as zones[0] = corner cab at the meeting corner,
+        # and fridge (last) lands at the outer/away-from-corner end.
         if has_corner:
             primary_zones = ["corner"] + primary_zones
 
         # Reverse axis on the wall whose meeting corner is at its right end.
-        # This makes the cursor pack items from the corner outward, leaving any
-        # tail gap at the OUTER (away-from-corner) end.
-        primary_reverse = (
-            primary_meeting is not None and primary_meeting > primary.length_mm / 2.0
-        )
+        # This makes the cursor pack from the corner outward, leaving the tail
+        # gap at the OUTER end — and fridge (last zone) lands at the outer end.
+        primary_reverse = primary_meeting is not None and primary_meeting > primary.length_mm / 2.0
         secondary_reverse = (
             secondary_meeting is not None and secondary_meeting > secondary.length_mm / 2.0
         )
+        # NOTE: no direction flip needed here — fridge is LAST in all primary_zones
+        # lists, so it naturally ends up at the outer (away-from-corner) end
+        # regardless of whether a corner cabinet is present.
 
         # Corner-cab depth projects from primary into secondary's space.
         # Pad the secondary cursor by 900mm from its meeting end so items
@@ -659,18 +679,14 @@ class PlacementEngine:
         templates[side_a.name] = WallRunTemplate(
             wall_name=side_a.name,
             zones=side_a_zones,
-            reverse_axis=(
-                side_a_meeting is not None and side_a_meeting > side_a.length_mm / 2.0
-            ),
+            reverse_axis=(side_a_meeting is not None and side_a_meeting > side_a.length_mm / 2.0),
             compactness=compactness,
             start_offset_mm=side_offset,
         )
         templates[side_b.name] = WallRunTemplate(
             wall_name=side_b.name,
             zones=side_b_zones,
-            reverse_axis=(
-                side_b_meeting is not None and side_b_meeting > side_b.length_mm / 2.0
-            ),
+            reverse_axis=(side_b_meeting is not None and side_b_meeting > side_b.length_mm / 2.0),
             compactness=compactness,
             start_offset_mm=side_offset,
         )
@@ -709,6 +725,9 @@ class PlacementEngine:
                 if zone == "base" and self._is_corner_cabinet(sku):
                     continue
                 if zone == "corner" and not self._is_corner_cabinet(sku):
+                    continue
+                # Wall corner cabs are placed by a dedicated step — exclude from wall_cab slots
+                if zone == "wall_cab" and self._is_wall_corner_cabinet(sku):
                     continue
                 if not any(kw in combined for kw in keywords):
                     continue
@@ -765,9 +784,64 @@ class PlacementEngine:
                     continue
                 if zone == "corner" and not self._is_corner_cabinet(sku):
                     continue
+                if zone == "wall_cab" and self._is_wall_corner_cabinet(sku):
+                    continue
                 if any(kw in combined for kw in keywords):
                     widths.append(sku.width_mm)
         return min(widths) if widths else 0.0
+
+    def _pre_anchor_fridge_outer_end(
+        self,
+        preprocessing: PreprocessingOutput,
+        spatial: SpatialEngineOutput,
+        templates: dict[str, WallRunTemplate],
+        placed: dict[str, PlacedItem],
+    ) -> None:
+        """Place the fridge at the OUTER end of each reverse-axis template wall.
+
+        For L-shape the primary wall cursor runs right→left (reverse_axis=True),
+        placing stove/corner at the right (meeting-corner) end.  Without this
+        step the fridge — last zone — lands wherever the cursor ends up after
+        base cabs, then tail-fill adds MORE base cabs to its left, burying it
+        in the middle.  By pre-placing fridge at x=0 (the free-segment start)
+        before the cursor runs, tail-fill can only fill between fridge's right
+        edge and the cursor, giving the correct visual:
+
+          [FRIDGE | base cabs ... | STOVE | CORNER]
+        """
+        for wall_name, template in templates.items():
+            if not template.reverse_axis:
+                continue  # I-shape (non-reverse) already has fridge as first zone
+            if "fridge" not in template.zones:
+                continue
+            wall = self._get_wall(wall_name, spatial)
+            if wall is None:
+                continue
+            segs = spatial.free_segments.get(wall_name, [])
+            if not segs:
+                continue
+            fridge_sku = self._pick_sku_for_zone(
+                "fridge", preprocessing, set(), template.compactness
+            )
+            if fridge_sku is None:
+                continue
+            # Outer end for a right→left cursor = left end of the free segment
+            x = segs[0].start_mm
+            x = max(0.0, min(x, wall.length_mm - fridge_sku.width_mm))
+            if not self._position_clear(
+                x, fridge_sku.width_mm, wall_name, placed, Z_FLOOR_MM, wall.length_mm
+            ):
+                continue
+            placement_id = self._unique_placement_id(fridge_sku.sku_id, placed)
+            placed[placement_id] = self._make_item(
+                fridge_sku, "cooling", x, wall.thickness_mm, Z_FLOOR_MM, wall_name
+            )
+            logger.debug(
+                "FRIDGE-ANCHOR: %s at x=%.0f (outer end) on %s",
+                placement_id,
+                x,
+                wall_name,
+            )
 
     def _place_with_cursor(
         self,
@@ -812,20 +886,25 @@ class PlacementEngine:
             reserved = 0.0
             for j in range(i + 1, len(template.zones)):
                 z = template.zones[j]
-                is_terminator_base = (z == "base" and j == last_idx)
+                is_terminator_base = z == "base" and j == last_idx
                 if z in _MANDATORY or is_terminator_base:
                     reserved += self._min_width_for_zone(z, preprocessing, used_ids)
             remaining = (cursor - run_limit) if template.reverse_axis else (run_limit - cursor)
             max_w_here = max(0.0, remaining - reserved)
 
             sku = self._pick_sku_for_zone(
-                zone, preprocessing, used_ids, template.compactness,
+                zone,
+                preprocessing,
+                used_ids,
+                template.compactness,
                 max_width=max_w_here,
             )
             if sku is None:
                 logger.info(
                     "TEMPLATE: no SKU available for zone '%s' on %s (max_w=%.0f) — skipping slot",
-                    zone, wall.name, max_w_here,
+                    zone,
+                    wall.name,
+                    max_w_here,
                 )
                 continue
 
@@ -837,21 +916,32 @@ class PlacementEngine:
             if x < -1.0 or (x + sku.width_mm) > wall.length_mm + 1.0:
                 logger.info(
                     "TEMPLATE: %s (%s, %.0fmm) overflows %s — skipping",
-                    sku.sku_id, zone, sku.width_mm, wall.name,
+                    sku.sku_id,
+                    zone,
+                    sku.width_mm,
+                    wall.name,
                 )
                 continue
 
             zone_type = _TPL_ZONE_TYPE.get(zone, "preparation")
             placement_id = self._unique_placement_id(sku.sku_id, placed)
             placed[placement_id] = self._make_item(
-                sku, zone_type, x, wall.thickness_mm, Z_FLOOR_MM, wall.name,
+                sku,
+                zone_type,
+                x,
+                wall.thickness_mm,
+                Z_FLOOR_MM,
+                wall.name,
             )
             used_ids.add(sku.sku_id)
             logger.debug(
                 "CURSOR: %s%s (%s, %.0fmm) at x=%.0f on %s",
                 placement_id,
                 "" if placement_id == sku.sku_id else f" [reusing {sku.sku_id}]",
-                zone, sku.width_mm, x, wall.name,
+                zone,
+                sku.width_mm,
+                x,
+                wall.name,
             )
 
             if template.reverse_axis:
@@ -881,8 +971,6 @@ class PlacementEngine:
         if not segs:
             return
 
-        cap_mm = _TPL_FILL_CAP_MM.get(template.compactness, 1500.0)
-
         if template.reverse_axis:
             limit = segs[0].start_mm
             remaining = cursor - limit
@@ -893,50 +981,59 @@ class PlacementEngine:
         if remaining <= 50.0:
             return
 
-        # Tail fill may reuse the same base SKU multiple times (e.g. 3× 600mm
-        # bases on a long secondary wall). We collect ALL catalog base cabs
-        # (corners excluded), and the loop allows reuse — bounded by cap_mm.
+        # Fill ALL remaining space with base cabs (no arbitrary cap) so runs are
+        # continuous with no visible gaps. Widest SKU first for spacious/balanced;
+        # narrowest first for compact — this drives visual variety while still
+        # ensuring full coverage. Only a residual gap smaller than the narrowest
+        # available cab (~450mm) can remain, and it ends up at the wall end.
         available = self._collect_template_base_cabs(preprocessing, set())
 
-        # Sort by variant preference: spacious widest-first, compact narrowest.
         if template.compactness == "compact":
             available.sort(key=lambda s: s.width_mm)
         else:
             available.sort(key=lambda s: s.width_mm, reverse=True)
 
-        mm_added = 0.0
-        while remaining > 50.0 and mm_added < cap_mm:
+        while remaining > 50.0:
             placed_one = False
             for sku in available:
                 if sku.width_mm > remaining + 1.0:
                     continue
-                if mm_added + sku.width_mm > cap_mm + 1.0:
-                    continue
                 x = cursor - sku.width_mm if template.reverse_axis else cursor
                 if not self._position_clear(
-                    x, sku.width_mm, wall.name, placed, Z_FLOOR_MM, wall.length_mm,
+                    x,
+                    sku.width_mm,
+                    wall.name,
+                    placed,
+                    Z_FLOOR_MM,
+                    wall.length_mm,
                 ):
                     continue
                 placement_id = self._unique_placement_id(sku.sku_id, placed)
                 placed[placement_id] = self._make_item(
-                    sku, "preparation", x, wall.thickness_mm, Z_FLOOR_MM, wall.name,
+                    sku,
+                    "preparation",
+                    x,
+                    wall.thickness_mm,
+                    Z_FLOOR_MM,
+                    wall.name,
                 )
-                mm_added += sku.width_mm
                 remaining -= sku.width_mm
                 if template.reverse_axis:
                     cursor -= sku.width_mm
                 else:
                     cursor += sku.width_mm
                 logger.debug(
-                    "TAIL-FILL: %s%s (%.0fmm) at x=%.0f on %s (%.0f/%.0f)",
+                    "TAIL-FILL: %s%s (%.0fmm) at x=%.0f on %s",
                     placement_id,
                     "" if placement_id == sku.sku_id else f" [reusing {sku.sku_id}]",
-                    sku.width_mm, x, wall.name, mm_added, cap_mm,
+                    sku.width_mm,
+                    x,
+                    wall.name,
                 )
                 placed_one = True
                 break
             if not placed_one:
-                break  # nothing fits
+                break  # residual gap smaller than narrowest available SKU
 
     def _collect_template_base_cabs(
         self,
@@ -967,9 +1064,12 @@ class PlacementEngine:
         """If a hood SKU exists in zone_groups, mount it directly above the stove."""
         stove_item: PlacedItem | None = next(
             (
-                it for it in placed.values()
-                if any(kw in (it.category + " " + it.name).lower()
-                       for kw in ("stove", "range", "cooktop"))
+                it
+                for it in placed.values()
+                if any(
+                    kw in (it.category + " " + it.name).lower()
+                    for kw in ("stove", "range", "cooktop")
+                )
                 and it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
             ),
             None,
@@ -991,61 +1091,165 @@ class PlacementEngine:
         if hood_sku is None:
             return
 
-        # Centre hood horizontally over the stove. Mount at WALL-CAB level (or
-        # NKBA-18 minimum clearance from cooktop, whichever is higher) so it
-        # sits at the upper run with wall cabinets, not flat on the cooktop.
+        # Centre hood horizontally over the stove.
+        # Top-align hood with wall cabinets so the upper row looks flush:
+        #   hood_bottom = wall_cab_bottom + wall_cab_height - hood_height
+        # Also enforce NKBA-18 minimum clearance from cooktop top to hood bottom.
         stove_w = stove_item.dimensions_mm["width"]
         stove_h = stove_item.dimensions_mm["height"]
         x = stove_item.position_mm["x"] + (stove_w - hood_sku.width_mm) / 2.0
         y = stove_item.position_mm["y"]
-        z = max(
-            _WALL_CAB_Z_MM,
-            stove_item.position_mm["z"] + stove_h + _HOOD_CLEARANCE_ABOVE_COOKTOP_MM,
-        )
+        wall_cab_h = self._get_wall_cab_height(preprocessing)
+        wall_cab_top = _WALL_CAB_Z_MM + wall_cab_h
+        hood_top_aligned_z = wall_cab_top - hood_sku.height_mm
+        min_nkba_z = stove_item.position_mm["z"] + stove_h + Z_HOOD_CLEARANCE_MM
+        z = max(hood_top_aligned_z, min_nkba_z, _WALL_CAB_Z_MM)
         placement_id = self._unique_placement_id(hood_sku.sku_id, placed)
         placed[placement_id] = self._make_item(
-            hood_sku, "cooking", x, y, z, stove_item.anchor_wall,
+            hood_sku,
+            "cooking",
+            x,
+            y,
+            z,
+            stove_item.anchor_wall,
         )
         logger.debug(
-            "DEP: hood %s placed above stove at x=%.0f z=%.0f", placement_id, x, z,
+            "DEP: hood %s placed above stove at x=%.0f z=%.0f",
+            placement_id,
+            x,
+            z,
         )
+
+    # z-height of countertop surface (top of a standard base cabinet)
+    _COUNTERTOP_Z_MM: float = 900.0
+
+    def _place_unplaced_appliances(
+        self,
+        preprocessing: PreprocessingOutput,
+        spatial: SpatialEngineOutput,
+        placed: dict[str, PlacedItem],
+        spillover: list[str],
+    ) -> None:
+        """Mount wall-level and countertop appliances (microwave, oven, coffee machine).
+
+        Routing by placement field and must_attach_to:
+          counter_top  / must_attach_to="counter" → z = 900mm (sits on countertop)
+          built_in     / must_attach_to="wall"    → z = _WALL_CAB_Z_MM (in upper cab slot)
+          default (legacy SKUs)                   → z = _WALL_CAB_Z_MM
+
+        Placed on the same wall as the stove/hood when possible.
+        """
+        _WALL_APPLIANCE_KW: tuple[str, ...] = ("microwave", "oven", "coffee_machine")
+
+        # Find unplaced wall/counter appliances
+        placed_ids = {it.sku_id for it in placed.values()}
+        to_place: list[SKU] = []
+        seen: set[str] = set()
+        for skus in preprocessing.zone_groups.values():
+            for sku in skus:
+                if sku.sku_id in seen:
+                    continue
+                seen.add(sku.sku_id)
+                if sku.sku_id in placed_ids:
+                    continue
+                combined = (sku.category + " " + sku.name).lower()
+                if any(kw in combined for kw in _WALL_APPLIANCE_KW):
+                    to_place.append(sku)
+        if not to_place:
+            return
+
+        # Only consider walls that already have floor-level items placed on them.
+        # This prevents microwaves / ovens from landing on walls that the current
+        # family (I / L) never uses (e.g. east_wall for an I-shape kitchen).
+        active_walls: set[str] = {
+            it.anchor_wall
+            for it in placed.values()
+            if it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
+        }
+
+        # Determine preferred wall: same as stove or hood
+        cooking_wall: str | None = None
+        for it in placed.values():
+            combined = (it.category + " " + it.name).lower()
+            if any(kw in combined for kw in ("stove", "range", "cooktop", "hood")):
+                cooking_wall = it.anchor_wall
+                break
+
+        wall_names: list[str] = []
+        if cooking_wall and cooking_wall in active_walls:
+            wall_names.append(cooking_wall)
+        for w in spatial.walls:
+            if w.has_cabinets and w.name in active_walls and w.name not in wall_names:
+                wall_names.append(w.name)
+
+        for sku in to_place:
+            # Microwaves always sit on the countertop (z=900mm) — physically they
+            # rest on the base-cabinet worktop regardless of SKU's placement tag.
+            # Built-in ovens and coffee machines use their placement field.
+            combined_lower = (sku.category + " " + sku.name).lower()
+            is_microwave = "microwave" in combined_lower
+            is_countertop = (
+                is_microwave or sku.placement == "counter_top" or sku.must_attach_to == "counter"
+            )
+            mount_z = self._COUNTERTOP_Z_MM if is_countertop else _WALL_CAB_Z_MM
+
+            placed_this = False
+            for wall_name in wall_names:
+                wall = self._get_wall(wall_name, spatial)
+                if wall is None:
+                    continue
+                subranges = self._free_subranges(wall, placed, spatial, mount_z)
+                for fs, fe in subranges:
+                    if fe - fs < sku.width_mm:
+                        continue
+                    x = fs
+                    placement_id = self._unique_placement_id(sku.sku_id, placed)
+                    placed[placement_id] = self._make_item(
+                        sku,
+                        "cooking",
+                        x,
+                        wall.thickness_mm,
+                        mount_z,
+                        wall_name,
+                    )
+                    logger.debug(
+                        "APPL: %s (%s) placed at x=%.0f z=%.0f (%s) on %s",
+                        placement_id,
+                        sku.name,
+                        x,
+                        mount_z,
+                        "countertop" if is_countertop else "wall-cab",
+                        wall_name,
+                    )
+                    placed_this = True
+                    break
+                if placed_this:
+                    break
+            if not placed_this:
+                spillover.append(
+                    f"SPILLOVER: {sku.sku_id} ({sku.name}) could not be placed — no space"
+                )
+                logger.warning("APPL: %s has no placement space", sku.sku_id)
 
     def _place_wall_cabs_above_bases(
         self,
         preprocessing: PreprocessingOutput,
+        spatial: SpatialEngineOutput,
         placed: dict[str, PlacedItem],
         spillover: list[str],
     ) -> None:
-        """Mount wall cabinets directly above base cabinets, one per base cab.
+        """Continuous cursor fill of the upper wall zone with wall cabinets.
 
-        Skips x-ranges where a tall cabinet exists (tall cabs already extend
-        into the wall-cab z-zone — no room for an upper).
+        Uses _free_subranges() at _WALL_CAB_Z_MM, which already subtracts:
+          - tall floor items whose tops extend into the wall-cab zone (fridge, etc.)
+          - windows (via wall_free_segments when available)
+          - already-placed wall-level items (hood, microwave, wall corners)
+        Each free sub-range is packed left-to-right with the widest available
+        wall cab, repeatedly reusing SKUs until the range is filled. This ensures
+        the entire upper wall is covered with no visible gaps except where
+        physically blocked.
         """
-        used_ids = set(placed.keys())
-        # Floor-level base cabs grouped by wall
-        bases_by_wall: dict[str, list[PlacedItem]] = {}
-        # Tall-cab x-ranges per wall (wall cabs can't mount above these)
-        tall_ranges_by_wall: dict[str, list[tuple[float, float]]] = {}
-        for it in placed.values():
-            combined = (it.category + " " + it.name).lower()
-            if "tall_cabinet" in combined:
-                x = it.position_mm["x"]
-                tall_ranges_by_wall.setdefault(it.anchor_wall, []).append(
-                    (x, x + it.dimensions_mm["width"])
-                )
-                continue
-            if "base_cabinet" not in it.category.lower():
-                continue
-            if it.position_mm.get("z", 0.0) >= Z_LEVEL_SPLIT_MM:
-                continue
-            # Skip corner cabs for wall-cab mounting — corners get their own treatment
-            if any(kw in combined for kw in _CORNER_KW):
-                continue
-            bases_by_wall.setdefault(it.anchor_wall, []).append(it)
-
-        # Available wall cab SKUs (deduplicated by sku_id). Sorted widest-first
-        # so wider bases get matched to wider wall cabs. Reuse is allowed —
-        # multiple base cabs may share the same wall-cab SKU.
+        # Collect wall cabinet SKUs (exclude wall corner cabs — handled separately)
         wall_cabs: list[SKU] = []
         seen: set[str] = set()
         for skus in preprocessing.zone_groups.values():
@@ -1053,38 +1257,123 @@ class PlacementEngine:
                 if sku.sku_id in seen:
                     continue
                 seen.add(sku.sku_id)
-                if "wall_cabinet" in sku.category.lower():
-                    wall_cabs.append(sku)
+                if "wall_cabinet" not in sku.category.lower():
+                    continue
+                if self._is_wall_corner_cabinet(sku):
+                    continue
+                wall_cabs.append(sku)
+        if not wall_cabs:
+            return
         wall_cabs.sort(key=lambda s: s.width_mm, reverse=True)
+        narrowest = min(s.width_mm for s in wall_cabs)
 
-        for wall_name, bases in bases_by_wall.items():
-            tall_ranges = tall_ranges_by_wall.get(wall_name, [])
-            bases.sort(key=lambda b: b.position_mm["x"])
-            for base in bases:
-                if not wall_cabs:
-                    break
-                base_x1 = base.position_mm["x"]
-                base_w = base.dimensions_mm["width"]
-                # Pick a wall cab no wider than the base
-                sku = next(
-                    (s for s in wall_cabs if s.width_mm <= base_w + 1.0),
-                    None,
-                )
-                if sku is None:
+        # Pre-compute which walls actually have floor-level items — only those
+        # walls should get an upper run.  This prevents wall cabs being placed
+        # on a third wall (e.g. west_wall) for an L-shape layout that only uses
+        # two walls, avoiding noisy ISOLATED-CABINET removals later.
+        active_floor_walls: set[str] = {
+            it.anchor_wall
+            for it in placed.values()
+            if it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
+        }
+
+        for wall in spatial.walls:
+            if not wall.has_cabinets:
+                continue
+            if wall.name not in active_floor_walls:
+                continue
+            subranges = self._free_subranges(wall, placed, spatial, _WALL_CAB_Z_MM)
+            for fs, fe in subranges:
+                cursor = fs
+                while fe - cursor >= narrowest - 1.0:
+                    remaining = fe - cursor
+                    placed_one = False
+                    for sku in wall_cabs:
+                        if sku.width_mm > remaining + 1.0:
+                            continue
+                        placement_id = self._unique_placement_id(sku.sku_id, placed)
+                        placed[placement_id] = self._make_item(
+                            sku,
+                            "storage",
+                            cursor,
+                            wall.thickness_mm,
+                            _WALL_CAB_Z_MM,
+                            wall.name,
+                        )
+                        logger.debug(
+                            "WALL-CAB: %s (%.0fmm) at x=%.0f on %s",
+                            placement_id,
+                            sku.width_mm,
+                            cursor,
+                            wall.name,
+                        )
+                        cursor += sku.width_mm
+                        placed_one = True
+                        break
+                    if not placed_one:
+                        break  # residual gap smaller than narrowest wall cab
+
+    def _get_wall_cab_height(self, preprocessing: PreprocessingOutput) -> float:
+        """Return height of standard (non-corner) wall cabinet SKUs; fallback 700mm."""
+        for skus in preprocessing.zone_groups.values():
+            for sku in skus:
+                if "wall_cabinet" in sku.category.lower() and not self._is_wall_corner_cabinet(sku):
+                    return sku.height_mm
+        return 700.0
+
+    def _place_wall_corners_above_base_corners(
+        self,
+        preprocessing: PreprocessingOutput,
+        placed: dict[str, PlacedItem],
+        spillover: list[str],
+    ) -> None:
+        """Place one wall corner cabinet directly above each base corner cabinet.
+
+        Keeps the upper wall run continuous at the corner so there is no
+        visible gap at the junction of L- and U-shape layouts.
+        """
+        base_corners = [
+            it
+            for it in placed.values()
+            if self._is_base_corner_item(it) and it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
+        ]
+        if not base_corners:
+            return
+
+        wall_corner_skus: list[SKU] = []
+        seen: set[str] = set()
+        for skus in preprocessing.zone_groups.values():
+            for sku in skus:
+                if sku.sku_id in seen:
                     continue
-                x = base_x1 + (base_w - sku.width_mm) / 2.0
-                x2 = x + sku.width_mm
-                # Skip if overlapping a tall cabinet's x-range
-                if any(not (x2 <= t1 or x >= t2) for t1, t2 in tall_ranges):
-                    continue
-                y = base.position_mm["y"]
-                placement_id = self._unique_placement_id(sku.sku_id, placed)
-                placed[placement_id] = self._make_item(
-                    sku, "storage", x, y, _WALL_CAB_Z_MM, wall_name,
-                )
-                logger.debug(
-                    "WALL-CAB: %s above %s at x=%.0f", placement_id, base.sku_id, x,
-                )
+                seen.add(sku.sku_id)
+                if self._is_wall_corner_cabinet(sku):
+                    wall_corner_skus.append(sku)
+        if not wall_corner_skus:
+            return
+
+        for base_item in base_corners:
+            sku = min(
+                wall_corner_skus,
+                key=lambda s: abs(s.width_mm - base_item.dimensions_mm["width"]),
+            )
+            x = base_item.position_mm["x"]
+            y = base_item.position_mm["y"]
+            placement_id = self._unique_placement_id(sku.sku_id, placed)
+            placed[placement_id] = self._make_item(
+                sku,
+                "storage",
+                x,
+                y,
+                _WALL_CAB_Z_MM,
+                base_item.anchor_wall,
+            )
+            logger.debug(
+                "WALL-CORNER: %s above base corner at x=%.0f on %s",
+                placement_id,
+                x,
+                base_item.anchor_wall,
+            )
 
     def _place_with_templates(
         self,
@@ -1111,30 +1400,55 @@ class PlacementEngine:
             {k: round(v) for k, v in landing_areas.items()},
         )
 
+        # 0: anchor fridge at the outer wall-end BEFORE cursor runs so it is
+        # never buried in the middle by tail-fill.  Only fires for reverse-axis
+        # templates (L-shape primary wall) where fridge is the last cursor zone.
+        self._pre_anchor_fridge_outer_end(preprocessing, spatial, templates, placed)
+
         # 1 + 2: cursor placement + tail fill, per wall
         for wall_name, template in templates.items():
             wall = self._get_wall(wall_name, spatial)
             if wall is None:
                 continue
             cursor = self._place_with_cursor(
-                wall, template, preprocessing, spatial, placed, spillover,
+                wall,
+                template,
+                preprocessing,
+                spatial,
+                placed,
+                spillover,
             )
             self._tail_fill_with_cap(
-                wall, template, cursor, preprocessing, spatial, placed, spillover,
+                wall,
+                template,
+                cursor,
+                preprocessing,
+                spatial,
+                placed,
+                spillover,
             )
 
         # 3: hood above stove
         self._place_hood_above_stove(preprocessing, placed, spillover)
 
-        # 4: wall cabs above base cabs
-        self._place_wall_cabs_above_bases(preprocessing, placed, spillover)
+        # 3b: wall-level appliances (microwave, built-in oven) not yet placed
+        self._place_unplaced_appliances(preprocessing, spatial, placed, spillover)
+
+        # 4: continuous wall cabinet fill (upper zone, all walls)
+        self._place_wall_cabs_above_bases(preprocessing, spatial, placed, spillover)
+
+        # 4b: wall corner cabs directly above base corner cabs (upper run continuity)
+        self._place_wall_corners_above_base_corners(preprocessing, placed, spillover)
 
         # 5: window safety — remove any wall cabinet that ended up over a window
         self._remove_wall_cabs_over_windows(placed, spatial, spillover)
 
         # 6: respect cabinet_preference (e.g. "base_only" removes wall/tall cabs)
         self._cleanup_isolated_optionals(
-            placed, preprocessing, spillover, family=zone_plan.family,
+            placed,
+            preprocessing,
+            spillover,
+            family=zone_plan.family,
         )
 
         # 7: log missing base support beside major appliances (informational)
@@ -1160,13 +1474,13 @@ class PlacementEngine:
 
     # Map item_hints keys → keywords to find the matching SKU in zone_groups
     _ITEM_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
-        "fridge":       ("fridge", "refrigerator"),
-        "sink":         ("sink",),
-        "dishwasher":   ("dishwasher",),
-        "stove":        ("stove", "cooktop", "range"),
-        "hood":         ("hood", "vent"),
-        "oven":         ("oven",),
-        "microwave":    ("microwave",),
+        "fridge": ("fridge", "refrigerator"),
+        "sink": ("sink",),
+        "dishwasher": ("dishwasher",),
+        "stove": ("stove", "cooktop", "range"),
+        "hood": ("hood", "vent"),
+        "oven": ("oven",),
+        "microwave": ("microwave",),
         "tall_cabinet": ("tall_cabinet", "pantry", "tall cabinet"),
     }
 
@@ -1213,7 +1527,8 @@ class PlacementEngine:
             if wall_name not in valid_walls:
                 logger.info(
                     "item_hints[%s] references unknown wall %r — skipping (fallback)",
-                    item_type, wall_name,
+                    item_type,
+                    wall_name,
                 )
                 continue
 
@@ -1230,23 +1545,27 @@ class PlacementEngine:
             if coords is None:
                 logger.info(
                     "item_hints[%s] position %r unresolvable — falling back",
-                    item_type, position,
+                    item_type,
+                    position,
                 )
                 continue
             x, y, z = coords
             # Validate position is collision-free and within wall bounds (Fix A)
-            if not self._position_clear(
-                x, sku.width_mm, wall.name, placed, z, wall.length_mm
-            ):
+            if not self._position_clear(x, sku.width_mm, wall.name, placed, z, wall.length_mm):
                 logger.info(
                     "item_hints[%s] resolved to colliding position on %s — falling back",
-                    item_type, wall.name,
+                    item_type,
+                    wall.name,
                 )
                 continue
             placed[sku.sku_id] = self._make_item(sku, zone_name, x, y, z, wall.name)
             logger.debug(
                 "Placed %s (%s) via item_hints on %s at %r (x=%.0f)",
-                sku.sku_id, item_type, wall.name, position, x,
+                sku.sku_id,
+                item_type,
+                wall.name,
+                position,
+                x,
             )
 
     def _override_dependent_wall(
@@ -1263,8 +1582,8 @@ class PlacementEngine:
         """
         anchor_map = {
             "dishwasher": ("sink",),
-            "tap":        ("sink",),
-            "hood":       ("stove", "range"),
+            "tap": ("sink",),
+            "hood": ("stove", "range"),
         }
         anchors = anchor_map.get(item_type)
         if not anchors:
@@ -1276,7 +1595,10 @@ class PlacementEngine:
             if anchor_item.anchor_wall != hint_wall:
                 logger.info(
                     "Override: %s wall %s -> %s (follows %s)",
-                    item_type, hint_wall, anchor_item.anchor_wall, kw,
+                    item_type,
+                    hint_wall,
+                    anchor_item.anchor_wall,
+                    kw,
                 )
                 return anchor_item.anchor_wall, position
             return hint_wall, position
@@ -1321,7 +1643,8 @@ class PlacementEngine:
                 if not placed_at_corner:
                     logger.info(
                         "CORNER-SKIPPED: %s — no available corner on %s",
-                        sku.sku_id, wall.name,
+                        sku.sku_id,
+                        wall.name,
                     )
                     spillover.append(
                         f"CORNER-SKIPPED: {sku.sku_id} no available corner on {wall.name}"
@@ -1333,8 +1656,12 @@ class PlacementEngine:
             if self._is_fridge_or_tall(sku):
                 y = wall.thickness_mm
                 for corner_x in [max(0.0, wall.length_mm - sku.width_mm), 0.0]:
-                    if self._position_clear(corner_x, sku.width_mm, wall.name, placed, Z_FLOOR_MM, wall.length_mm):
-                        placed[item_key] = self._make_item(sku, zone_type, corner_x, y, Z_FLOOR_MM, wall.name)
+                    if self._position_clear(
+                        corner_x, sku.width_mm, wall.name, placed, Z_FLOOR_MM, wall.length_mm
+                    ):
+                        placed[item_key] = self._make_item(
+                            sku, zone_type, corner_x, y, Z_FLOOR_MM, wall.name
+                        )
                         logger.debug("CORNER: %s at x=%.0f on %s", sku.sku_id, corner_x, wall.name)
                         break
                 if item_key in placed:
@@ -1354,7 +1681,11 @@ class PlacementEngine:
                         sink_item.position_mm["z"],
                         sink_item.anchor_wall,
                     )
-                    logger.debug("Tap '%s' co-located with sink at x=%.0f", sku.sku_id, sink_item.position_mm["x"])
+                    logger.debug(
+                        "Tap '%s' co-located with sink at x=%.0f",
+                        sku.sku_id,
+                        sink_item.position_mm["x"],
+                    )
                     continue
                 # Sink not placed yet — fall through to normal logic
 
@@ -1366,9 +1697,7 @@ class PlacementEngine:
                     x, y, z = result
                     # Hood-stove same-x is whitelisted (z-stack). For other dependents
                     # (e.g. dishwasher) reject same-x and fall through to strategies/first_free.
-                    if self._dependent_position_ok(
-                        sku, x, wall.name, placed, wall.length_mm
-                    ):
+                    if self._dependent_position_ok(sku, x, wall.name, placed, wall.length_mm):
                         placed[item_key] = self._make_item(sku, zone_type, x, y, z, wall.name)
                         continue
 
@@ -1380,9 +1709,7 @@ class PlacementEngine:
                 if result is None:
                     continue
                 x, y, z = result
-                if not self._position_clear(
-                    x, sku.width_mm, wall.name, placed, z, wall.length_mm
-                ):
+                if not self._position_clear(x, sku.width_mm, wall.name, placed, z, wall.length_mm):
                     continue
                 placed[item_key] = self._make_item(sku, zone_type, x, y, z, wall.name)
                 resolved = True
@@ -1479,18 +1806,28 @@ class PlacementEngine:
             # Drop optional fill items (wall cabinets, prep cabinets) to preserve appliances
             for kw in _DROPPABLE_KW:
                 if kw in cat or kw in name_lower:
-                    spillover.append(f"SPILLOVER: {sku.sku_id} dropped from {wall.name} (I-shape, no space)")
+                    spillover.append(
+                        f"SPILLOVER: {sku.sku_id} dropped from {wall.name} (I-shape, no space)"
+                    )
                     return
             # Non-droppable appliance: force-place at leftmost free x, or overlap if necessary
             y = wall.thickness_mm
             for forced_x in (0.0, max(0.0, wall.length_mm - sku.width_mm)):
-                if self._position_clear(forced_x, sku.width_mm, wall.name, placed, Z_FLOOR_MM, wall.length_mm):
-                    placed[sku.sku_id] = self._make_item(sku, zone_type, forced_x, y, Z_FLOOR_MM, wall.name)
-                    spillover.append(f"CONSTRAINT_VIOLATION: {sku.sku_id} forced to corner on {wall.name} (I-shape)")
+                if self._position_clear(
+                    forced_x, sku.width_mm, wall.name, placed, Z_FLOOR_MM, wall.length_mm
+                ):
+                    placed[sku.sku_id] = self._make_item(
+                        sku, zone_type, forced_x, y, Z_FLOOR_MM, wall.name
+                    )
+                    spillover.append(
+                        f"CONSTRAINT_VIOLATION: {sku.sku_id} forced to corner on {wall.name} (I-shape)"
+                    )
                     return
             # Last resort: place at x=0 even with overlap to keep it on the wall
             placed[sku.sku_id] = self._make_item(sku, zone_type, 0.0, y, Z_FLOOR_MM, wall.name)
-            spillover.append(f"CONSTRAINT_VIOLATION: {sku.sku_id} force-placed at x=0 on {wall.name} (I-shape overlap)")
+            spillover.append(
+                f"CONSTRAINT_VIOLATION: {sku.sku_id} force-placed at x=0 on {wall.name} (I-shape overlap)"
+            )
             return
 
         # Step 1: try adjacent wall
@@ -1544,9 +1881,7 @@ class PlacementEngine:
         y = wall.thickness_mm
         z = Z_FLOOR_MM
         for forced_x in (0.0, max(0.0, wall.length_mm - sku.width_mm)):
-            if self._position_clear(
-                forced_x, sku.width_mm, wall.name, placed, z, wall.length_mm
-            ):
+            if self._position_clear(forced_x, sku.width_mm, wall.name, placed, z, wall.length_mm):
                 logger.warning(
                     "CONSTRAINT_VIOLATION: '%s' forced to x=%.0f on wall '%s'",
                     sku.sku_id,
@@ -1557,9 +1892,7 @@ class PlacementEngine:
                     f"CONSTRAINT_VIOLATION: {sku.sku_id} forced to corner "
                     f"on {wall.name} (LAYOUT-06)"
                 )
-                placed[sku.sku_id] = self._make_item(
-                    sku, zone_type, forced_x, y, z, wall.name
-                )
+                placed[sku.sku_id] = self._make_item(sku, zone_type, forced_x, y, z, wall.name)
                 return
         # Fix C: required appliances are NEVER dropped — force-place with overlap
         # and log CONSTRAINT_VIOLATION so the validator can flag the layout.
@@ -1567,15 +1900,15 @@ class PlacementEngine:
             forced_x = 0.0
             logger.warning(
                 "CONSTRAINT_VIOLATION: '%s' force-placed at x=%.0f on '%s' with overlap (no clean space)",
-                sku.sku_id, forced_x, wall.name,
+                sku.sku_id,
+                forced_x,
+                wall.name,
             )
             spillover.append(
                 f"CONSTRAINT_VIOLATION: {sku.sku_id} force-placed on {wall.name} "
                 f"with overlap (LAYOUT-06)"
             )
-            placed[sku.sku_id] = self._make_item(
-                sku, zone_type, forced_x, y, z, wall.name
-            )
+            placed[sku.sku_id] = self._make_item(sku, zone_type, forced_x, y, z, wall.name)
             return
         # Non-required, non-droppable (rare path) — drop rather than create silent collision
         logger.warning(
@@ -1681,7 +2014,8 @@ class PlacementEngine:
         centred inside that sub-range.
         """
         candidates = [
-            (fs, fe) for fs, fe in self._free_subranges(wall, placed, spatial, z)
+            (fs, fe)
+            for fs, fe in self._free_subranges(wall, placed, spatial, z)
             if fe - fs >= sku.width_mm
         ]
         if not candidates:
@@ -1702,7 +2036,8 @@ class PlacementEngine:
     ) -> float | None:
         """Leftmost / rightmost free position accounting for placed items."""
         candidates = [
-            (fs, fe) for fs, fe in self._free_subranges(wall, placed, spatial, z)
+            (fs, fe)
+            for fs, fe in self._free_subranges(wall, placed, spatial, z)
             if fe - fs >= sku.width_mm
         ]
         if not candidates:
@@ -1755,16 +2090,14 @@ class PlacementEngine:
         ref_w = ref.dimensions_mm["width"]
 
         x_right = ref_x + ref_w
-        if (
-            x_right + sku.width_mm <= wall.length_mm
-            and self._position_clear(x_right, sku.width_mm, wall.name, placed, z, wall.length_mm)
+        if x_right + sku.width_mm <= wall.length_mm and self._position_clear(
+            x_right, sku.width_mm, wall.name, placed, z, wall.length_mm
         ):
             return (x_right, y, z)
 
         x_left = ref_x - sku.width_mm
-        if (
-            x_left >= 0
-            and self._position_clear(x_left, sku.width_mm, wall.name, placed, z, wall.length_mm)
+        if x_left >= 0 and self._position_clear(
+            x_left, sku.width_mm, wall.name, placed, z, wall.length_mm
         ):
             return (x_left, y, z)
 
@@ -1891,10 +2224,7 @@ class PlacementEngine:
                     ranges.append((x, x + w))
             else:
                 # Wall level: block wall items directly
-                if not item_is_floor:
-                    ranges.append((x, x + w))
-                # Also block if a floor item is tall enough to reach wall-cab zone
-                elif (item_z + item_h) > Z_WALL_CAB_BOTTOM_MM:
+                if not item_is_floor or (item_z + item_h) > Z_WALL_CAB_BOTTOM_MM:
                     ranges.append((x, x + w))
         ranges.sort()
         return ranges
@@ -2020,7 +2350,13 @@ class PlacementEngine:
         required_walls = self._FAMILY_WALL_COUNT.get(family.upper(), 1)
 
         appliance_keys = (
-            "fridge", "refrigerator", "sink", "stove", "range", "cooktop", "oven",
+            "fridge",
+            "refrigerator",
+            "sink",
+            "stove",
+            "range",
+            "cooktop",
+            "oven",
         )
         appliance_walls: set[str] = set()
         for item in placed.values():
@@ -2047,7 +2383,8 @@ class PlacementEngine:
                 protected_walls.add(w)
                 logger.info(
                     "TYPOLOGY-PROTECT: %s spared from isolated cleanup (family=%s)",
-                    w, family,
+                    w,
+                    family,
                 )
 
         def _kind(item: PlacedItem) -> tuple[bool, bool, bool, bool]:
@@ -2091,7 +2428,8 @@ class PlacementEngine:
                 )
                 logger.info(
                     "ISOLATED-CABINET: removed %s from %s",
-                    sku_id, item.anchor_wall,
+                    sku_id,
+                    item.anchor_wall,
                 )
 
         # Rule 3: wall cab with no base/anchored item below at same x-range
@@ -2119,9 +2457,7 @@ class PlacementEngine:
                     break
             if not has_support:
                 placed.pop(sku_id, None)
-                spillover.append(
-                    f"UNSUPPORTED-WALL-CAB: {sku_id} removed (no base cabinet below)"
-                )
+                spillover.append(f"UNSUPPORTED-WALL-CAB: {sku_id} removed (no base cabinet below)")
                 logger.info("UNSUPPORTED-WALL-CAB: removed %s", sku_id)
 
     # ------------------------------------------------------------------ #
@@ -2199,7 +2535,9 @@ class PlacementEngine:
 
         # First move: try cleaning to target
         if self._try_move_zone("sink", target, placed, preprocessing, spatial):
-            spillover.append(f"U-REPAIR: moved cleaning to {target} (variant {zone_plan.variant_id})")
+            spillover.append(
+                f"U-REPAIR: moved cleaning to {target} (variant {zone_plan.variant_id})"
+            )
             logger.info("U-REPAIR: cleaning -> %s", target)
             used.add(target)
             if self._wall_has_window(target, spatial):
@@ -2209,17 +2547,21 @@ class PlacementEngine:
             if unused2 and len(used) < 3:
                 target2 = unused2[0]
                 if self._try_move_zone("stove", target2, placed, preprocessing, spatial):
-                    spillover.append(f"U-REPAIR: moved cooking to {target2} (variant {zone_plan.variant_id})")
+                    spillover.append(
+                        f"U-REPAIR: moved cooking to {target2} (variant {zone_plan.variant_id})"
+                    )
                     logger.info("U-REPAIR: cooking -> %s", target2)
             return
 
         # First-move fallback: try cooking to target
         if self._try_move_zone("stove", target, placed, preprocessing, spatial):
-            spillover.append(f"U-REPAIR: moved cooking to {target} (variant {zone_plan.variant_id})")
+            spillover.append(
+                f"U-REPAIR: moved cooking to {target} (variant {zone_plan.variant_id})"
+            )
             logger.info("U-REPAIR: cooking -> %s", target)
             return
 
-        spillover.append(f"TYPOLOGY-WEAK-U: could not distribute zones across 3 walls")
+        spillover.append("TYPOLOGY-WEAK-U: could not distribute zones across 3 walls")
         logger.info("TYPOLOGY-WEAK-U: variant %s", zone_plan.variant_id)
 
     # ------------------------------------------------------------------ #
@@ -2283,8 +2625,15 @@ class PlacementEngine:
         # ---- Run-span cleanup (all families) ---------------------------------
         # Keywords that act as anchors defining the run span on a wall.
         _SPAN_KW = (
-            "fridge", "refrigerator", "sink", "stove", "range", "cooktop",
-            "dishwasher", "oven", "microwave",
+            "fridge",
+            "refrigerator",
+            "sink",
+            "stove",
+            "range",
+            "cooktop",
+            "dishwasher",
+            "oven",
+            "microwave",
         )
 
         # Build run span for each wall: [leftmost_anchor_x, rightmost_anchor_end_x]
@@ -2330,7 +2679,12 @@ class PlacementEngine:
                 )
                 logger.info(
                     "RUN-CLEANUP: %s at x=[%.0f-%.0f] outside span [%.0f-%.0f] on %s",
-                    sku_id, item_x1, item_x2, run_start, run_end, wall,
+                    sku_id,
+                    item_x1,
+                    item_x2,
+                    run_start,
+                    run_end,
+                    wall,
                 )
 
     def _maybe_repair_l_secondary_wall(
@@ -2384,9 +2738,13 @@ class PlacementEngine:
             return  # v3: don't move appliances
 
         first_choice = "sink" if strategy == "cleaning" else "stove"
-        fallback    = "stove" if strategy == "cleaning" else "sink"
+        fallback = "stove" if strategy == "cleaning" else "sink"
 
-        secondary = window_candidates[0] if (strategy == "cleaning" and window_candidates) else candidates[0]
+        secondary = (
+            window_candidates[0]
+            if (strategy == "cleaning" and window_candidates)
+            else candidates[0]
+        )
 
         for choice in (first_choice, fallback):
             if self._try_move_zone(choice, secondary, placed, preprocessing, spatial):
@@ -2395,18 +2753,20 @@ class PlacementEngine:
                 )
                 logger.info(
                     "L-REPAIR: moved %s zone to %s for %s",
-                    choice, secondary, zone_plan.variant_id,
+                    choice,
+                    secondary,
+                    zone_plan.variant_id,
                 )
                 if choice == "sink" and self._wall_has_window(secondary, spatial):
                     spillover.append(f"SINK-WINDOW-PLACED: sink on {secondary}")
                     logger.info("SINK-WINDOW-PLACED: %s on %s", zone_plan.variant_id, secondary)
                 return
 
-        spillover.append(
-            f"TYPOLOGY-WEAK-L: could not move cleaning/cooking to {secondary}"
-        )
+        spillover.append(f"TYPOLOGY-WEAK-L: could not move cleaning/cooking to {secondary}")
         logger.info(
-            "TYPOLOGY-WEAK-L: %s — no zone fits %s", zone_plan.variant_id, secondary,
+            "TYPOLOGY-WEAK-L: %s — no zone fits %s",
+            zone_plan.variant_id,
+            secondary,
         )
 
     def _try_move_zone(
@@ -2423,8 +2783,8 @@ class PlacementEngine:
             return False
 
         anchor_kw = {"sink": ("sink",), "stove": ("stove", "range", "cooktop")}[anchor_kind]
-        dep_kw    = {
-            "sink":  ("dishwasher", "tap", "faucet", "mixer"),
+        dep_kw = {
+            "sink": ("dishwasher", "tap", "faucet", "mixer"),
             "stove": ("hood",),
         }[anchor_kind]
 
@@ -2463,21 +2823,27 @@ class PlacementEngine:
         anchor_x: float | None = None
         if anchor_kind == "sink" and self._wall_has_window(target_wall.name, spatial):
             win_coords = self._near_window(
-                target_wall, anchor_sku, spatial,
-                target_wall.thickness_mm, Z_FLOOR_MM,
+                target_wall,
+                anchor_sku,
+                spatial,
+                target_wall.thickness_mm,
+                Z_FLOOR_MM,
             )
             if win_coords is not None:
                 anchor_x = win_coords[0]
         if anchor_x is None:
-            anchor_x = self._resolve_centre(
-                target_wall, anchor_sku, placed, spatial, Z_FLOOR_MM
-            )
+            anchor_x = self._resolve_centre(target_wall, anchor_sku, placed, spatial, Z_FLOOR_MM)
         if anchor_x is None:
-            placed.clear(); placed.update(snapshot)
+            placed.clear()
+            placed.update(snapshot)
             return False
         placed[anchor_id] = self._make_item(
-            anchor_sku, snap_zone[anchor_id],
-            anchor_x, target_wall.thickness_mm, Z_FLOOR_MM, target_wall.name,
+            anchor_sku,
+            snap_zone[anchor_id],
+            anchor_x,
+            target_wall.thickness_mm,
+            Z_FLOOR_MM,
+            target_wall.name,
         )
 
         # Place dependents
@@ -2492,9 +2858,7 @@ class PlacementEngine:
                 coords = (a.position_mm["x"], a.position_mm["y"], a.position_mm["z"])
                 dep_wall_name = a.anchor_wall
             elif "dishwasher" in combined:
-                coords = self._resolve_next_to(
-                    "sink", dep_sku, target_wall, placed, Z_FLOOR_MM
-                )
+                coords = self._resolve_next_to("sink", dep_sku, target_wall, placed, Z_FLOOR_MM)
             elif "hood" in combined:
                 coords = self._resolve_above("stove", dep_sku, placed)
                 dep_wall_name = placed[anchor_id].anchor_wall
@@ -2502,16 +2866,23 @@ class PlacementEngine:
                 coords = None
 
             if coords is None:
-                placed.clear(); placed.update(snapshot)
+                placed.clear()
+                placed.update(snapshot)
                 return False
             x, y, z = coords
             placed[sid] = self._make_item(
-                dep_sku, snap_zone[sid], x, y, z, dep_wall_name,
+                dep_sku,
+                snap_zone[sid],
+                x,
+                y,
+                z,
+                dep_wall_name,
             )
 
         # Reject if the move introduced any collision
         if self._detect_collisions(placed):
-            placed.clear(); placed.update(snapshot)
+            placed.clear()
+            placed.update(snapshot)
             return False
 
         return True
@@ -2537,7 +2908,10 @@ class PlacementEngine:
         if len(active_walls) < required:
             logger.warning(
                 "TYPOLOGY-VIOLATION: family=%s expects %d active wall(s); only %d present (%s)",
-                family, required, len(active_walls), sorted(active_walls),
+                family,
+                required,
+                len(active_walls),
+                sorted(active_walls),
             )
             spillover.append(
                 f"TYPOLOGY-VIOLATION: family={family} expects {required} active walls, "
@@ -2570,10 +2944,7 @@ class PlacementEngine:
                 if other.anchor_wall == wall_name
                 and other.position_mm["z"] < Z_LEVEL_SPLIT_MM
                 and "wall_cabinet" not in other.category.lower()
-                and not any(
-                    kw in (other.category + " " + other.name).lower()
-                    for kw in _CORNER_KW
-                )
+                and not any(kw in (other.category + " " + other.name).lower() for kw in _CORNER_KW)
             ]
 
             if not floor_items:
@@ -2594,9 +2965,7 @@ class PlacementEngine:
             wc_cx = wc_x + wc_w / 2.0
             nearest = min(
                 floor_items,
-                key=lambda b: abs(
-                    (b.position_mm["x"] + b.dimensions_mm["width"] / 2.0) - wc_cx
-                ),
+                key=lambda b: abs((b.position_mm["x"] + b.dimensions_mm["width"] / 2.0) - wc_cx),
             )
             new_x = nearest.position_mm["x"]
 
@@ -2636,8 +3005,7 @@ class PlacementEngine:
             wc_x = item.position_mm["x"]
             wc_w = item.dimensions_mm["width"]
             windows = [
-                o for o in spatial.exclusions
-                if o.kind == "window" and o.wall == wall_obj.anchor
+                o for o in spatial.exclusions if o.kind == "window" and o.wall == wall_obj.anchor
             ]
             for win in windows:
                 if wc_x < (win.offset_mm + win.width_mm) and (wc_x + wc_w) > win.offset_mm:
@@ -2647,7 +3015,10 @@ class PlacementEngine:
                     )
                     logger.info(
                         "WALL-CABINET-REMOVED: %s overlaps window [%.0f-%.0f] on %s",
-                        sku_id, win.offset_mm, win.offset_mm + win.width_mm, item.anchor_wall,
+                        sku_id,
+                        win.offset_mm,
+                        win.offset_mm + win.width_mm,
+                        item.anchor_wall,
                     )
                     break
 
@@ -2689,7 +3060,7 @@ class PlacementEngine:
         # Variant-aware size preference: v3 prefers narrow cabs, v2 medium, v1 widest.
         vidx = self._i_variant_index(variant_id)
         if vidx == 3:
-            unplaced.sort(key=lambda s: s.width_mm)           # smallest first
+            unplaced.sort(key=lambda s: s.width_mm)  # smallest first
         elif vidx == 2:
             mid = sum(s.width_mm for s in unplaced) / max(len(unplaced), 1)
             unplaced.sort(key=lambda s: abs(s.width_mm - mid))  # closest to median
@@ -2717,16 +3088,25 @@ class PlacementEngine:
                 continue
             has_appliance = any(
                 item.anchor_wall == wall.name
-                and any(kw in (item.category + " " + item.name).lower()
-                        for kw in ("stove", "fridge", "sink", "range", "refrigerator"))
+                and any(
+                    kw in (item.category + " " + item.name).lower()
+                    for kw in ("stove", "fridge", "sink", "range", "refrigerator")
+                )
                 for item in placed.values()
             )
             (appliance_walls if has_appliance else other_walls).append(wall.name)
 
         # Anchor keywords that define the run span on each wall.
         _SPAN_ANCHORS = (
-            "fridge", "refrigerator", "sink", "stove", "range", "cooktop",
-            "dishwasher", "oven", "microwave",
+            "fridge",
+            "refrigerator",
+            "sink",
+            "stove",
+            "range",
+            "cooktop",
+            "dishwasher",
+            "oven",
+            "microwave",
         )
 
         # Per-wall fill cap based on family + variant + role (primary/secondary).
@@ -2745,8 +3125,7 @@ class PlacementEngine:
             # Determine wall role + cap for this variant.
             role = "primary" if wall_name in appliance_walls else "secondary"
             cap_mm = (
-                _FILL_CAP_MM[role].get(vidx, _FILL_CAP_MM[role][2])
-                if cap_active else float("inf")
+                _FILL_CAP_MM[role].get(vidx, _FILL_CAP_MM[role][2]) if cap_active else float("inf")
             )
             mm_added_this_wall: float = 0.0
 
@@ -2754,16 +3133,15 @@ class PlacementEngine:
             # placed on this wall.  Prevents base cabs from being scattered in empty
             # areas far from the appliance run.
             span_items = [
-                it for it in placed.values()
+                it
+                for it in placed.values()
                 if it.anchor_wall == wall_name
                 and it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
                 and any(kw in (it.category + " " + it.name).lower() for kw in _SPAN_ANCHORS)
             ]
             if span_items:
                 run_start = min(it.position_mm["x"] for it in span_items)
-                run_end = max(
-                    it.position_mm["x"] + it.dimensions_mm["width"] for it in span_items
-                )
+                run_end = max(it.position_mm["x"] + it.dimensions_mm["width"] for it in span_items)
             else:
                 run_start = 0.0
                 run_end = wall.length_mm
@@ -2790,25 +3168,38 @@ class PlacementEngine:
                             if sku.width_mm <= (fill_end - fill_start):
                                 # Safety net: verify no overlap with any floor-level run unit.
                                 if not self._position_clear(
-                                    fill_start, sku.width_mm, wall.name, placed,
-                                    Z_FLOOR_MM, wall.length_mm,
+                                    fill_start,
+                                    sku.width_mm,
+                                    wall.name,
+                                    placed,
+                                    Z_FLOOR_MM,
+                                    wall.length_mm,
                                 ):
                                     logger.warning(
                                         "GAP-FILL: %s at x=%.0f on %s would overlap — skipped",
-                                        sku.sku_id, fill_start, wall.name,
+                                        sku.sku_id,
+                                        fill_start,
+                                        wall.name,
                                     )
                                     break
                                 placed[sku.sku_id] = self._make_item(
-                                    sku, "preparation",
-                                    fill_start, wall.thickness_mm, Z_FLOOR_MM, wall.name,
+                                    sku,
+                                    "preparation",
+                                    fill_start,
+                                    wall.thickness_mm,
+                                    Z_FLOOR_MM,
+                                    wall.name,
                                 )
                                 placed_ids.add(sku.sku_id)
                                 unplaced.remove(sku)
                                 mm_added_this_wall += sku.width_mm
                                 logger.debug(
                                     "GAP-FILL: %s at x=%.0f on %s (filled %.0f/%.0f mm)",
-                                    sku.sku_id, fill_start, wall.name,
-                                    mm_added_this_wall, cap_mm,
+                                    sku.sku_id,
+                                    fill_start,
+                                    wall.name,
+                                    mm_added_this_wall,
+                                    cap_mm,
                                 )
                                 changed = True
                                 break
@@ -2832,7 +3223,9 @@ class PlacementEngine:
                             logger.info(
                                 "END-FILLER: %.0fmm unfillable gap on %s "
                                 "(smallest base_cab=%.0fmm)",
-                                gap, wall_name, min_base_width,
+                                gap,
+                                wall_name,
+                                min_base_width,
                             )
                             break  # one per wall is enough
 
@@ -2853,10 +3246,7 @@ class PlacementEngine:
         Only logs — does not move or remove items.
         """
         LANDING_ADJ_MM: float = 1200.0
-        base_cabs = [
-            item for item in placed.values()
-            if "base_cabinet" in item.category.lower()
-        ]
+        base_cabs = [item for item in placed.values() if "base_cabinet" in item.category.lower()]
 
         def _has_adjacent_base(appl: PlacedItem) -> bool:
             ax1 = appl.position_mm["x"]
@@ -2867,7 +3257,8 @@ class PlacementEngine:
                     0.0,
                     max(ax1, bc.position_mm["x"])
                     - min(ax2, bc.position_mm["x"] + bc.dimensions_mm["width"]),
-                ) <= LANDING_ADJ_MM
+                )
+                <= LANDING_ADJ_MM
                 for bc in base_cabs
             )
 
@@ -2882,7 +3273,8 @@ class PlacementEngine:
                     )
                     logger.info(
                         "LANDING-MISSING: %s on %s (no adjacent base_cabinet)",
-                        item.sku_id, item.anchor_wall,
+                        item.sku_id,
+                        item.anchor_wall,
                     )
 
         # Sink: self-supporting floor unit; log if no adjacent base for landing space
@@ -2896,7 +3288,8 @@ class PlacementEngine:
                     )
                     logger.info(
                         "SINK-BASE-IMPLIED: %s on %s (no adjacent base_cabinet)",
-                        item.sku_id, item.anchor_wall,
+                        item.sku_id,
+                        item.anchor_wall,
                     )
         # Note: stove/range and dishwasher are fully standalone floor-level units
         # and do not need adjacent base cabinet support — no logging.
@@ -2944,19 +3337,31 @@ class PlacementEngine:
             new_x = fridge_x1 + needed
             if new_x + fridge.dimensions_mm["width"] <= wall.length_mm:
                 fridge.position_mm["x"] = new_x
-                logger.info("GAP-ENFORCE: moved %s right to x=%.0f (gap was %.0fmm)", fridge_id, new_x, gap)
-                spillover.append(f"GAP-ENFORCE: {fridge_id} moved to maintain {GAP_FRIDGE_STOVE_MM:.0f}mm stove-fridge gap")
+                logger.info(
+                    "GAP-ENFORCE: moved %s right to x=%.0f (gap was %.0fmm)", fridge_id, new_x, gap
+                )
+                spillover.append(
+                    f"GAP-ENFORCE: {fridge_id} moved to maintain {GAP_FRIDGE_STOVE_MM:.0f}mm stove-fridge gap"
+                )
                 return
         else:
             # Fridge is to the left — push it further left
             new_x = fridge_x1 - needed
             if new_x >= 0:
                 fridge.position_mm["x"] = new_x
-                logger.info("GAP-ENFORCE: moved %s left to x=%.0f (gap was %.0fmm)", fridge_id, new_x, gap)
-                spillover.append(f"GAP-ENFORCE: {fridge_id} moved to maintain {GAP_FRIDGE_STOVE_MM:.0f}mm stove-fridge gap")
+                logger.info(
+                    "GAP-ENFORCE: moved %s left to x=%.0f (gap was %.0fmm)", fridge_id, new_x, gap
+                )
+                spillover.append(
+                    f"GAP-ENFORCE: {fridge_id} moved to maintain {GAP_FRIDGE_STOVE_MM:.0f}mm stove-fridge gap"
+                )
                 return
 
-        logger.warning("GAP-ENFORCE: cannot achieve %.0fmm stove-fridge gap on %s — layout too tight", GAP_FRIDGE_STOVE_MM, wall.name)
+        logger.warning(
+            "GAP-ENFORCE: cannot achieve %.0fmm stove-fridge gap on %s — layout too tight",
+            GAP_FRIDGE_STOVE_MM,
+            wall.name,
+        )
 
     # ------------------------------------------------------------------ #
     # Run compactor                                                        #
@@ -2982,7 +3387,9 @@ class PlacementEngine:
         for wall in spatial.walls:
             if not wall.has_cabinets:
                 continue
-            self._compact_single_wall(wall, placed, preprocessing, spatial, spillover, variant_id, family)
+            self._compact_single_wall(
+                wall, placed, preprocessing, spatial, spillover, variant_id, family
+            )
         self._reposition_dependents_after_compaction(placed, spillover)
 
     def _compact_single_wall(
@@ -3022,18 +3429,18 @@ class PlacementEngine:
             )
             if is_corner:
                 x, w = it.position_mm["x"], it.dimensions_mm["width"]
-                at_edge = (
-                    x <= WALL_END_TOLERANCE_MM
-                    or (x + w) >= (wall.length_mm - WALL_END_TOLERANCE_MM)
+                at_edge = x <= WALL_END_TOLERANCE_MM or (x + w) >= (
+                    wall.length_mm - WALL_END_TOLERANCE_MM
                 )
                 if not at_edge:
                     spillover.append(
-                        f"CORNER-SKIPPED: {sid} not at wall edge on {wall.name} "
-                        f"(x={x:.0f})"
+                        f"CORNER-SKIPPED: {sid} not at wall edge on {wall.name} (x={x:.0f})"
                     )
                     logger.info(
                         "CORNER-SKIPPED: %s not at wall edge on %s (x=%.0f)",
-                        sid, wall.name, x,
+                        sid,
+                        wall.name,
+                        x,
                     )
                 corner_ids.add(sid)
             else:
@@ -3048,22 +3455,31 @@ class PlacementEngine:
 
         # Identify key anchor items
         sink_sid: str | None = next(
-            (sid for sid, it in pack_items
-             if "sink" in (it.category + " " + it.name).lower()
-             and "dishwasher" not in (it.category + " " + it.name).lower()),
+            (
+                sid
+                for sid, it in pack_items
+                if "sink" in (it.category + " " + it.name).lower()
+                and "dishwasher" not in (it.category + " " + it.name).lower()
+            ),
             None,
         )
         fridge_sid: str | None = next(
-            (sid for sid, it in pack_items
-             if "fridge" in (it.category + " " + it.name).lower()
-             or "refrigerator" in (it.category + " " + it.name).lower()),
+            (
+                sid
+                for sid, it in pack_items
+                if "fridge" in (it.category + " " + it.name).lower()
+                or "refrigerator" in (it.category + " " + it.name).lower()
+            ),
             None,
         )
         stove_sid: str | None = next(
-            (sid for sid, it in pack_items
-             if "stove" in (it.category + " " + it.name).lower()
-             or "range" in (it.category + " " + it.name).lower()
-             or "cooktop" in (it.category + " " + it.name).lower()),
+            (
+                sid
+                for sid, it in pack_items
+                if "stove" in (it.category + " " + it.name).lower()
+                or "range" in (it.category + " " + it.name).lower()
+                or "cooktop" in (it.category + " " + it.name).lower()
+            ),
             None,
         )
 
@@ -3119,23 +3535,22 @@ class PlacementEngine:
                 variant_order = [s for s, _ in sorted(pack_items, key=i_rank)]
                 if default_order == variant_order:
                     shape_label = "I-shape" if is_i_shape else family.upper() + "-shape"
-                    spillover.append(
-                        "VARIANT-COLLAPSED: I-shape compacted to same feasible order"
-                    )
+                    spillover.append("VARIANT-COLLAPSED: I-shape compacted to same feasible order")
                     logger.info(
                         "VARIANT-COLLAPSED: %s v%d order same as v1 on %s",
-                        shape_label, vidx, wall.name,
+                        shape_label,
+                        vidx,
+                        wall.name,
                     )
             pack_items.sort(key=i_rank)
         else:
             pack_items.sort(key=_run_rank)
             if (is_i_shape or (is_lu and wall_has_sink)) and sink_near_window and vidx in (2, 3):
-                spillover.append(
-                    "VARIANT-COLLAPSED: I-shape compacted to same feasible order"
-                )
+                spillover.append("VARIANT-COLLAPSED: I-shape compacted to same feasible order")
                 logger.info(
                     "VARIANT-COLLAPSED: v%d window-anchor overrides on %s",
-                    vidx, wall.name,
+                    vidx,
+                    wall.name,
                 )
 
         # Record stove's pre-compact position to detect wall-end pinning.
@@ -3154,13 +3569,25 @@ class PlacementEngine:
         new_positions: dict[str, float] = {}
         if sink_near_window and window_center is not None and sink_sid is not None:
             self._pack_window_anchored(
-                pack_items, segs, window_center, sink_sid,
-                placed, fridge_sid, stove_sid, new_positions, wall,
+                pack_items,
+                segs,
+                window_center,
+                sink_sid,
+                placed,
+                fridge_sid,
+                stove_sid,
+                new_positions,
+                wall,
             )
         else:
             self._pack_sequential_run(
-                pack_items, segs, placed,
-                fridge_sid, stove_sid, new_positions, wall,
+                pack_items,
+                segs,
+                placed,
+                fridge_sid,
+                stove_sid,
+                new_positions,
+                wall,
             )
 
         # Re-pin stove to wall right end if it was originally there.
@@ -3173,7 +3600,9 @@ class PlacementEngine:
                 new_positions[stove_sid] = pinned_x
                 logger.debug(
                     "COMPACT-PIN: stove %s re-pinned to wall end x=%.0f on %s",
-                    stove_sid, pinned_x, wall.name,
+                    stove_sid,
+                    pinned_x,
+                    wall.name,
                 )
 
         for sid, nx in new_positions.items():
@@ -3182,7 +3611,11 @@ class PlacementEngine:
                 if abs(nx - old_x) > 0.5:
                     placed[sid].position_mm["x"] = nx
                     logger.debug(
-                        "COMPACT: %s x=%.0f->%.0f on %s", sid, old_x, nx, wall.name,
+                        "COMPACT: %s x=%.0f->%.0f on %s",
+                        sid,
+                        old_x,
+                        nx,
+                        wall.name,
                     )
 
     @staticmethod
@@ -3203,6 +3636,7 @@ class PlacementEngine:
         v2:            fridge | base_left | DW   | sink   | base_right | stove
         v3:            fridge | all_bases         | sink  | DW         | stove
         """
+
         def rank(sid_it: tuple[str, PlacedItem]) -> tuple[int, float]:
             sid, it = sid_it
             c = (it.category + " " + it.name).lower()
@@ -3225,13 +3659,12 @@ class PlacementEngine:
                     return (3, ox)
             # Base / prep / storage cabs
             if variant_idx == 3:
-                return (1, ox)          # all bases pack left of sink
+                return (1, ox)  # all bases pack left of sink
             return (1 if ox < sink_x else 5, ox)  # v1/v2: split at initial sink pos
+
         return rank
 
-    def _wall_endpoint_global(
-        self, wall: Wall, local_x: float
-    ) -> tuple[float, float] | None:
+    def _wall_endpoint_global(self, wall: Wall, local_x: float) -> tuple[float, float] | None:
         """Convert a wall-local x-offset to global (x, y) of the wall's front face.
 
         Used to find which end of a wall meets another cabinet wall (the L/U
@@ -3253,9 +3686,7 @@ class PlacementEngine:
             pass
         return None
 
-    def _get_meeting_corner_x(
-        self, wall: Wall, spatial: SpatialEngineOutput
-    ) -> float | None:
+    def _get_meeting_corner_x(self, wall: Wall, spatial: SpatialEngineOutput) -> float | None:
         """Return wall-local x (0.0 or wall.length_mm) of the corner that meets
         another cabinet wall, or None if this wall is isolated.
 
@@ -3274,17 +3705,19 @@ class PlacementEngine:
                 o_global = self._wall_endpoint_global(other, ox_local)
                 if o_global is None:
                     continue
-                if (abs(start_global[0] - o_global[0]) < TOL
-                        and abs(start_global[1] - o_global[1]) < TOL):
+                if (
+                    abs(start_global[0] - o_global[0]) < TOL
+                    and abs(start_global[1] - o_global[1]) < TOL
+                ):
                     return 0.0
-                if (abs(end_global[0] - o_global[0]) < TOL
-                        and abs(end_global[1] - o_global[1]) < TOL):
+                if (
+                    abs(end_global[0] - o_global[0]) < TOL
+                    and abs(end_global[1] - o_global[1]) < TOL
+                ):
                     return wall.length_mm
         return None
 
-    def _get_wall_window_center(
-        self, wall: Wall, spatial: SpatialEngineOutput
-    ) -> float | None:
+    def _get_wall_window_center(self, wall: Wall, spatial: SpatialEngineOutput) -> float | None:
         """Return the x-offset of the first window centre on this wall, or None."""
         for exc in spatial.exclusions:
             if exc.kind == "window" and exc.wall == wall.anchor:
@@ -3316,18 +3749,12 @@ class PlacementEngine:
 
             # Enforce stove-fridge gap: whichever arrives second advances the cursor.
             if sid == stove_sid and fridge_sid in new_positions:
-                fridge_right = (
-                    new_positions[fridge_sid]
-                    + placed[fridge_sid].dimensions_mm["width"]
-                )
+                fridge_right = new_positions[fridge_sid] + placed[fridge_sid].dimensions_mm["width"]
                 gap = cursor - fridge_right
                 if 0.0 <= gap < GAP_FRIDGE_STOVE_MM:
                     cursor += GAP_FRIDGE_STOVE_MM - gap
             elif sid == fridge_sid and stove_sid in new_positions:
-                stove_right = (
-                    new_positions[stove_sid]
-                    + placed[stove_sid].dimensions_mm["width"]
-                )
+                stove_right = new_positions[stove_sid] + placed[stove_sid].dimensions_mm["width"]
                 gap = cursor - stove_right
                 if 0.0 <= gap < GAP_FRIDGE_STOVE_MM:
                     cursor += GAP_FRIDGE_STOVE_MM - gap
@@ -3349,7 +3776,9 @@ class PlacementEngine:
             if not placed_ok:
                 logger.warning(
                     "COMPACT: %s (w=%.0f) cannot fit in any segment on %s",
-                    sid, w, wall.name,
+                    sid,
+                    w,
+                    wall.name,
                 )
 
     def _pack_window_anchored(
@@ -3382,30 +3811,43 @@ class PlacementEngine:
         if sink_anchor is None:
             logger.info(
                 "COMPACT-WIN: window anchor %.0f not achievable on %s — sequential fallback",
-                window_center, wall.name,
+                window_center,
+                wall.name,
             )
             self._pack_sequential_run(
-                pack_items, segs, placed, fridge_sid, stove_sid, new_positions, wall,
+                pack_items,
+                segs,
+                placed,
+                fridge_sid,
+                stove_sid,
+                new_positions,
+                wall,
             )
             return
 
         sink_pos = next(i for i, (sid, _) in enumerate(pack_items) if sid == sink_sid)
         dw_pos = next(
-            (i for i, (sid, it) in enumerate(pack_items)
-             if "dishwasher" in (it.category + " " + it.name).lower()),
+            (
+                i
+                for i, (sid, it) in enumerate(pack_items)
+                if "dishwasher" in (it.category + " " + it.name).lower()
+            ),
             None,
         )
 
         left_items = [
-            (sid, it) for i, (sid, it) in enumerate(pack_items)
+            (sid, it)
+            for i, (sid, it) in enumerate(pack_items)
             if i < sink_pos and (dw_pos is None or i != dw_pos)
         ]
         sink_dw_items = [
-            (sid, it) for i, (sid, it) in enumerate(pack_items)
+            (sid, it)
+            for i, (sid, it) in enumerate(pack_items)
             if i == sink_pos or (dw_pos is not None and i == dw_pos)
         ]
         right_items = [
-            (sid, it) for i, (sid, it) in enumerate(pack_items)
+            (sid, it)
+            for i, (sid, it) in enumerate(pack_items)
             if i > sink_pos and (dw_pos is None or i != dw_pos)
         ]
 
@@ -3447,7 +3889,9 @@ class PlacementEngine:
             if not placed_ok:
                 logger.warning(
                     "COMPACT-WIN: %s (w=%.0f) cannot fit right of sink on %s",
-                    sid, w, wall.name,
+                    sid,
+                    w,
+                    wall.name,
                 )
 
     def _reposition_dependents_after_compaction(
@@ -3458,7 +3902,8 @@ class PlacementEngine:
         """Re-anchor hood to stove centre and tap to sink x after compaction."""
         stove = next(
             (
-                it for it in placed.values()
+                it
+                for it in placed.values()
                 if (
                     "stove" in (it.category + " " + it.name).lower()
                     or "range" in (it.category + " " + it.name).lower()
@@ -3470,7 +3915,8 @@ class PlacementEngine:
         )
         sink = next(
             (
-                it for it in placed.values()
+                it
+                for it in placed.values()
                 if "sink" in (it.category + " " + it.name).lower()
                 and "dishwasher" not in (it.category + " " + it.name).lower()
                 and it.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
@@ -3480,14 +3926,11 @@ class PlacementEngine:
 
         for sid, it in placed.items():
             combined = (it.category + " " + it.name).lower()
-            if (
-                "hood" in combined
-                and stove is not None
-                and it.anchor_wall == stove.anchor_wall
-            ):
-                new_x = stove.position_mm["x"] + (
-                    stove.dimensions_mm["width"] - it.dimensions_mm["width"]
-                ) / 2.0
+            if "hood" in combined and stove is not None and it.anchor_wall == stove.anchor_wall:
+                new_x = (
+                    stove.position_mm["x"]
+                    + (stove.dimensions_mm["width"] - it.dimensions_mm["width"]) / 2.0
+                )
                 if abs(new_x - it.position_mm["x"]) > 0.5:
                     it.position_mm["x"] = new_x
                     logger.debug("COMPACT-DEP: hood %s -> x=%.0f", sid, new_x)
@@ -3621,7 +4064,9 @@ class PlacementEngine:
                         )
                         logger.info(
                             "CORNER-FIRST: %s placed at x=%.0f on %s",
-                            sku.sku_id, corner_x, wall.name,
+                            sku.sku_id,
+                            corner_x,
+                            wall.name,
                         )
                         break
 
@@ -3677,11 +4122,23 @@ class PlacementEngine:
         return any(kw in combined for kw in _FRIDGE_KW) or any(kw in combined for kw in _TALL_KW)
 
     def _is_corner_cabinet(self, sku: SKU) -> bool:
-        """Return True if sku must be placed at a wall corner (must_attach_to=corner)."""
+        """Return True if sku is a BASE-level corner cabinet (must_attach_to=corner)."""
         if sku.must_attach_to == "corner":
             return True
         combined = (sku.category + " " + sku.name).lower()
-        return any(kw in combined for kw in _CORNER_KW)
+        return any(kw in combined for kw in _BASE_CORNER_KW)
+
+    @staticmethod
+    def _is_wall_corner_cabinet(sku: SKU) -> bool:
+        """Return True if sku is a wall-level corner cabinet (upper corner run)."""
+        combined = (sku.category + " " + sku.name).lower()
+        return any(kw in combined for kw in _WALL_CORNER_KW)
+
+    @staticmethod
+    def _is_base_corner_item(item: PlacedItem) -> bool:
+        """Return True if a PlacedItem is a floor-level base corner cabinet."""
+        combined = (item.category + " " + item.name).lower()
+        return any(kw in combined for kw in _BASE_CORNER_KW)
 
     def _is_tap(self, sku: SKU) -> bool:
         """Return True if sku is a tap/faucet that should co-locate with the sink."""

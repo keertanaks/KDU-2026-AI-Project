@@ -72,6 +72,8 @@ class SKU:
     needs_water: bool
     needs_power: bool
     must_attach_to: str
+    placement: str = ""  # "built_in" | "counter_top" | "" (legacy)
+    color_set: str = ""  # e.g. "ivory_white", "sage_green" — empty for legacy SKUs
 
 
 @dataclass
