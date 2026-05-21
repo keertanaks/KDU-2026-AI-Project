@@ -466,13 +466,17 @@ class PromptParser:
         for key in (
             "color_keyword",
             "color_hex",
-            "layout_family",
             "style",
             "cabinet_preference",
             "budget_tier",
         ):
             if deterministic.get(key) is not None:
                 merged[key] = deterministic[key]
+
+        # layout_family: deterministic always wins — it uses explicit keyword matching;
+        # LLM may hallucinate a shape when none was mentioned, which collapses all
+        # variants into Mode A (same shape). If user said no shape, None is correct.
+        merged["layout_family"] = deterministic.get("layout_family")
 
         for key in ("special_requests", "ignored"):
             seen: list[str] = []

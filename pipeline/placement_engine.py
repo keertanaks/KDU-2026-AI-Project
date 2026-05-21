@@ -589,13 +589,14 @@ class PlacementEngine:
         spatial: SpatialEngineOutput,
         vidx: int,
     ) -> dict[str, WallRunTemplate]:
-        """U-shape: three cabinet walls. Back wall = wall with fridge.
+        """U-shape: three cabinet walls.
 
         Honors Agent 3's zone_assignments:
-          back wall   = wall hosting cooling (fridge); typically also has sink
-          side walls  = remaining cabinet walls — one gets cooking, other storage
-        Corner cabs at both ends of the back wall (bookended). Side walls
-        start AFTER the corner cab's 900mm depth-projection.
+          back wall   = wall hosting sink/cleaning; no fridge (avoids inner-corner overlap)
+          side_a      = cooking wall (stove + hood)
+          side_b      = storage/cooling — fridge placed at OUTER end (last zone)
+        Corner cabs at inner ends of both side walls. Fridge on side_b outer end
+        keeps it well clear of the inner-corner projections.
         """
         cabinet_walls = [w for w in spatial.walls if w.has_cabinets]
         if len(cabinet_walls) < 3:
@@ -642,32 +643,35 @@ class PlacementEngine:
         # Side walls always end with "base" (LAYOUT-05). Back wall is bookended
         # by corner cabs (added below), so it naturally terminates at corners.
         if vidx == 1:
-            back_zones = ["fridge", "base", "sink", "dishwasher", "base"]
+            back_zones = ["base", "sink", "dishwasher", "base"]
             side_a_zones = ["stove", "base"]
-            side_b_zones = ["base", "base"]
+            side_b_zones = ["base", "fridge"]
         elif vidx == 2:
-            back_zones = ["sink", "dishwasher", "fridge", "base"]
+            back_zones = ["sink", "dishwasher", "base"]
             side_a_zones = ["stove", "base"]
-            side_b_zones = ["base"]
+            side_b_zones = ["fridge"]
         else:
-            back_zones = ["fridge", "sink", "dishwasher", "base"]
+            back_zones = ["sink", "dishwasher", "base"]
             side_a_zones = ["stove", "base"]
-            side_b_zones = ["base"]
+            side_b_zones = ["base", "fridge"]
 
         if has_corner:
-            # Bookend the back wall with corner cabs at both ends. Cursor packs
-            # left-to-right (no reverse), so zones[0] lands at the left end and
-            # zones[-1] lands rightmost — corner cabs at both meeting corners.
-            back_zones = ["corner"] + back_zones + ["corner"]
+            # Corner cabs go at the INNER end of each side wall (where they meet
+            # the back wall). This fills the visible inner-corner gap and gives two
+            # distinct corner placements — one per U-shape junction.
+            # Cursor on side walls starts at the inner end (reverse_axis) so
+            # zones[0] = "corner" lands at the inner end first.
+            side_a_zones = ["corner"] + side_a_zones
+            side_b_zones = ["corner"] + side_b_zones
 
         # Determine reverse_axis for each wall based on meeting corner position
         back_meeting = self._get_meeting_corner_x(back, spatial)
         side_a_meeting = self._get_meeting_corner_x(side_a, spatial)
         side_b_meeting = self._get_meeting_corner_x(side_b, spatial)
 
-        # Side walls start AFTER the corner cab's 900mm depth-projection from
-        # the back wall (when corner cabs are bookended on the back wall).
-        side_offset = 900.0 if has_corner else 0.0
+        # No start_offset for side walls — corner cab is the first zone and
+        # naturally occupies the inner end; remaining items pack outward.
+        side_offset = 0.0
 
         # Back wall: no reverse since it's bookended by corner cabs on both ends
         templates[back.name] = WallRunTemplate(
@@ -1332,11 +1336,11 @@ class PlacementEngine:
                 if new_gap < cur_gap or (new_gap == cur_gap and new_n < cur_n):
                     dp[amt] = (new_gap, new_n)
                     chosen[amt] = w
-        # find best filled amount (min gap, then fewest cabs)
-        best_amt = max(
-            (a for a in range(target_mm + 1) if dp[a][0] < INF),
-            key=lambda a: (-dp[a][0], -dp[a][1]),
-        )
+        # find best filled amount (min gap, then fewest cabs); skip a=0 (place-nothing base case)
+        valid = [a for a in range(1, target_mm + 1) if dp[a][0] < INF]
+        if not valid:
+            return []
+        best_amt = max(valid, key=lambda a: (-dp[a][0], -dp[a][1]))
         # reconstruct width sequence
         width_seq: list[int] = []
         cur = best_amt
@@ -1396,7 +1400,18 @@ class PlacementEngine:
                 wall_corner_skus,
                 key=lambda s: abs(s.width_mm - base_item.dimensions_mm["width"]),
             )
-            x = base_item.position_mm["x"]
+            # Snap wall corner flush to the actual wall edge.
+            # Base corner (e.g. 900mm) and wall corner (e.g. 600mm) differ in width,
+            # so sharing the same start-x leaves a gap at the corner end.
+            base_x = base_item.position_mm["x"]
+            base_right = base_x + base_item.dimensions_mm["width"]
+            TOL = 150.0
+            if base_x < TOL:
+                # Corner is at the LEFT end — left-align wall corner at x=0
+                x = 0.0
+            else:
+                # Corner is at the RIGHT end — right-align wall corner to base's right edge
+                x = base_right - sku.width_mm
             y = base_item.position_mm["y"]
             placement_id = self._unique_placement_id(sku.sku_id, placed)
             placed[placement_id] = self._make_item(
@@ -1473,11 +1488,11 @@ class PlacementEngine:
         # 3b: wall-level appliances (microwave, built-in oven) not yet placed
         self._place_unplaced_appliances(preprocessing, spatial, placed, spillover)
 
-        # 4: continuous wall cabinet fill (upper zone, all walls)
-        self._place_wall_cabs_above_bases(preprocessing, spatial, placed, spillover)
-
-        # 4b: wall corner cabs directly above base corner cabs (upper run continuity)
+        # 4: wall corner cabs first so _free_subranges excludes them before regular fill
         self._place_wall_corners_above_base_corners(preprocessing, placed, spillover)
+
+        # 4b: continuous wall cabinet fill (upper zone, all walls)
+        self._place_wall_cabs_above_bases(preprocessing, spatial, placed, spillover)
 
         # 5: window safety — remove any wall cabinet that ended up over a window
         self._remove_wall_cabs_over_windows(placed, spatial, spillover)
@@ -4083,6 +4098,13 @@ class PlacementEngine:
         family = zone_plan.family.upper()
         if family not in ("L", "U"):
             return  # I-shape has no meeting corner — corner cabs N/A
+
+        # U-shape: corners go on side walls (inner ends) via the template's first
+        # "corner" zone. No pre-pass needed — fridge in U-shape is on the back wall,
+        # not the side walls, so there is no risk of item_hints claiming side-wall
+        # inner corners before corners are placed.
+        if family == "U":
+            return
 
         for wall_name in set(zone_plan.zone_assignments.values()):
             wall = self._get_wall(wall_name, spatial)

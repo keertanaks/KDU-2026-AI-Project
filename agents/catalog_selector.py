@@ -610,10 +610,15 @@ class CatalogSelector:
             if category_kw in avoid_kw:
                 continue
             check_kws = [category_kw, *BASELINE_ALIASES.get(category_kw, [])]
-            if any(
-                any(kw in s.category.lower() or kw in s.name.lower() for kw in check_kws)
-                for s in skus.values()
-            ):
+            # For wall_cabinet: corner wall cabs don't count — need at least one regular wall cab
+            def _is_regular(s: SKU, kws: list[str]) -> bool:
+                if not any(kw in s.category.lower() or kw in s.name.lower() for kw in kws):
+                    return False
+                if category_kw == "wall_cabinet" and "corner" in s.name.lower():
+                    return False
+                return True
+
+            if any(_is_regular(s, check_kws) for s in skus.values()):
                 continue
             placed = False
             for source in (filtered_catalog, self._catalog):

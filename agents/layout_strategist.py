@@ -53,17 +53,11 @@ _FAMILY_WALLS: dict[str, int] = {"I": 1, "L": 2, "U": 3}
 # Strategy seed per variant index (from CLAUDE.md)
 # Shape names MUST match the SHAPES enum exactly so Agent 3 picks them reliably.
 SEEDS: dict[int, str] = {
-    1: ("room_shape MUST be L. Maximise counter run on the longest wall. Fridge at far end."),
-    2: (
-        "room_shape MUST be U. Close the work triangle tightly. Dishwasher opposite the sink wall."
-    ),
-    3: (
-        "room_shape MUST be I. Single-wall run only. Minimise total cabinet cost. Use narrower SKUs where possible."
-    ),
+    1: "room_shape MUST be L. Maximise counter run on the longest wall. Fridge at far end.",
+    2: "room_shape MUST be U. Tighten the work triangle. Spread fridge, sink, stove across walls.",
+    3: "room_shape MUST be I. Minimise total cabinet cost. Use narrower SKUs where possible.",
     4: "room_shape MUST be L. Maximise storage. Prioritise tall cabinets and wall cabinets over base units.",
-    5: (
-        "room_shape MUST be U. Accessibility focus. Maximise aisle widths. No tall cabinets blocking circulation."
-    ),
+    5: "room_shape MUST be U. Accessibility focus. Maximise aisle widths. No tall cabinets blocking circulation.",
 }
 
 # Regex patterns matching the allowed semantic vocabulary
@@ -429,46 +423,64 @@ class LayoutStrategist:
         # Variant-specific zone distribution — each variant is a different interpretation
         # of the same requested family shape (Mode A) or a different shape (Mode B).
         family_upper = (intent.layout_family or "").upper()
+
+        # Corner terms for primary wall — used to differentiate I-shape variants structurally
+        if "north" in primary_wall:
+            _left_corner, _right_corner = "at north-west corner", "at north-east corner"
+        elif "south" in primary_wall:
+            _left_corner, _right_corner = "at south-west corner", "at south-east corner"
+        elif "east" in primary_wall:
+            _left_corner, _right_corner = "at north-east corner", "at south-east corner"
+        else:
+            _left_corner, _right_corner = "at north-west corner", "at south-west corner"
+
         if intent.layout_family and family_upper == "I":
-            # Mode A I-shape: all 3 variants single-wall; vary ordering emphasis
+            # Mode A I-shape: vary fridge end across variants for structural differentiation
             if variant_index == 2:
                 zone_constraint = (
                     f"- ALL zones → assign to {primary_wall} only (I-shape is SINGLE-WALL)\n"
-                    f"- Tight work triangle: use 'centre of {primary_wall}' for sink; fridge at one end,\n"
-                    f"  stove near the other end — triangle perimeter 3962-6600mm\n"
+                    f"- MIRRORED layout: fridge at RIGHT end ('{_right_corner}'), stove near LEFT end\n"
+                    f"  Opposite workflow direction to Variant 1\n"
+                    f"- Sink at 'centre of {primary_wall}', dishwasher next to sink\n"
                     f"- Do NOT assign any zone to {secondary}\n"
                 )
             elif variant_index == 3:
                 zone_constraint = (
                     f"- ALL zones → assign to {primary_wall} only (I-shape is SINGLE-WALL)\n"
-                    f"- Minimize cabinet cost: efficient spacing, narrower base cabinets where possible\n"
-                    f"- Canonical sequence: fridge one end, sink centre, stove other end of {primary_wall}\n"
+                    f"- Cost-efficient: fridge at '{_left_corner}', sink near window if present\n"
+                    f"  otherwise 'centre of {primary_wall}', stove near right end\n"
+                    f"- Minimize cabinet cost: prefer narrower base cabinets, skip tall cabinets\n"
                     f"- Do NOT assign any zone to {secondary}\n"
                 )
             else:  # variant_index == 1
                 zone_constraint = (
                     f"- ALL zones → assign to {primary_wall} only (I-shape is SINGLE-WALL)\n"
-                    f"- Maximize counter run: fridge at one end, stove near the other, sink at centre\n"
+                    f"- Standard layout: fridge at LEFT end ('{_left_corner}'), stove near right end\n"
+                    f"- Sink at 'centre of {primary_wall}', maximize counter run\n"
                     f"- Do NOT assign any zone to {secondary}\n"
                 )
         elif intent.layout_family and family_upper == "L":
-            # Mode A L-shape: exactly 2 walls for all 3 variants — vary zone emphasis
+            # Mode A L-shape: exactly 2 walls for all 3 variants — vary WHICH wall gets cooking
             if variant_index == 2:
+                # Structurally different: cooking moves to the secondary wall
                 zone_constraint = (
-                    f"- Cooling (fridge) → {primary_wall} (far corner)\n"
-                    f"- Cooking (stove + hood) → {primary_wall} (centre, >600mm from fridge)\n"
-                    f"- Cleaning (sink + dishwasher) → {secondary} near the {primary_wall}/{secondary} corner\n"
-                    f"  Use 'right end of {secondary}' for sink — tight work triangle (3962-6600mm)\n"
-                    f"- Preparation → {secondary} alongside cleaning\n"
+                    f"- Cooling (fridge) → {primary_wall} (far corner, use corner term)\n"
+                    f"- COOKING (stove + hood) → {secondary} wall (centre of {secondary})\n"
+                    f"  This flips the work triangle: stove on the cross-wall, NOT on {primary_wall}\n"
+                    f"- Cleaning (sink + dishwasher) → {secondary} alongside cooking\n"
+                    f"  Use 'right end of {secondary}' for sink so dishwasher fits between stove and sink\n"
+                    f"- Preparation → {primary_wall} (long counter run, no stove interruption)\n"
                     f"- L-shape MUST use exactly 2 walls: {primary_wall} AND {secondary}\n"
                 )
             elif variant_index == 3:
+                # Different fridge corner + storage-heavy
                 zone_constraint = (
-                    f"- Cooling (fridge) + cooking (stove + hood) → {primary_wall}\n"
-                    f"  Fridge far end, stove centre of {primary_wall}\n"
+                    f"- Cooling (fridge) → {primary_wall} at the NEAR end (corner closest to {secondary})\n"
+                    f"  Use the corner term for the end of {primary_wall} that adjoins {secondary}\n"
+                    f"- Cooking (stove + hood) → {primary_wall}, towards the far end from fridge\n"
                     f"- Cleaning (sink + dishwasher) → {secondary}\n"
-                    f"- Storage-heavy: maximize base cabinets on both {primary_wall} AND {secondary}\n"
-                    f"- L-shape MUST use exactly 2 walls — do NOT collapse to single wall\n"
+                    f"- Storage-heavy: fill remaining {secondary} space with base cabinets\n"
+                    f"- L-shape MUST use both {primary_wall} AND {secondary} — do NOT collapse to one wall\n"
                 )
             else:  # variant_index == 1
                 zone_constraint = (
@@ -515,31 +527,32 @@ class LayoutStrategist:
                 f"- SPREAD appliances: fridge one end, sink centre, stove other end\n"
             )
         elif variant_index == 1 and not intent.layout_family:
-            # Mode B Variant 1: L-shape preference
+            # Mode B Variant 1: L-shape — classic, cooking on primary, cleaning on secondary
             zone_constraint = (
-                f"- Cooling, cleaning, and cooking → all assign to {primary_wall} (L-shape: max counter run)\n"
-                f"- SPREAD appliances along {primary_wall}: fridge at one end (use a corner strategy term),\n"
-                f"  stove at 'centre of {primary_wall}', sink near the OPPOSITE end from fridge\n"
-                f"  — do NOT cluster all 3 at the same end, that makes the work triangle too small\n"
-                f"- Preparation → assign to {primary_wall} first; overflow to {secondary} only if primary is full\n"
+                f"- Cooling (fridge) + cooking (stove + hood) → {primary_wall}\n"
+                f"  Fridge at FAR end of {primary_wall} (corner term), stove at centre (>600mm apart)\n"
+                f"- Cleaning (sink + dishwasher) → {secondary} (cross-wall for clean L workflow)\n"
+                f"  Use 'right end of {secondary}' so sink is near the corner for a tight work triangle\n"
+                f"- Preparation → {primary_wall} first; overflow to {secondary} if needed\n"
+                f"- L-shape MUST use both {primary_wall} AND {secondary}\n"
             )
         elif variant_index == 2 and not intent.layout_family:
-            # Mode B Variant 2: U-shape preference
+            # Mode B Variant 2: U-shape — 3 walls, tight work triangle
             zone_constraint = (
-                f"- Cooking + cooling → assign to {primary_wall}\n"
-                f"- Cleaning (sink + dishwasher) → assign to {secondary}\n"
-                f"  CRITICAL: use strategy 'right end of {secondary}' for the sink — this places it\n"
-                f"  near the L-corner where {secondary} meets {primary_wall}, keeping the work\n"
-                f"  triangle perimeter inside 3962-6600mm. Sink at the FAR end from the corner is too far.\n"
-                f"- Preparation → assign to {secondary} alongside cleaning\n"
+                f"- Cooling (fridge) → {primary_wall} (far corner)\n"
+                f"- Cleaning (sink + dishwasher) → {secondary} (near window if present, otherwise centre)\n"
+                f"- Cooking (stove + hood) → {tertiary} (centre of {tertiary})\n"
+                f"- Tight work triangle: fridge, sink, stove each on a different wall (3962-6600mm perimeter)\n"
+                f"- U-shape MUST use 3 walls: {primary_wall}, {secondary}, {tertiary} — NO single-wall\n"
             )
         else:
-            # Mode B Variant 3 or fallback: I-shape preference — single-wall layout
+            # Mode B Variant 3: I-shape — single wall, cost-minimizing
             zone_constraint = (
                 f"- ALL zones MUST assign ONLY to {primary_wall} — I-shape is a SINGLE-WALL layout\n"
                 f"- Do NOT assign ANY zone to {secondary} — that would break the I-shape constraint\n"
-                f"- Spread cooking, cleaning, and cooling evenly along {primary_wall}:\n"
-                f"  fridge at one end, sink at 'centre of {primary_wall}', stove near the other end\n"
+                f"- Cost-efficient: fridge at one end (corner term), sink at 'centre of {primary_wall}',\n"
+                f"  stove near the other end (work triangle 3962-6600mm)\n"
+                f"- Use narrower SKUs where possible to minimize total cabinet cost\n"
             )
 
         # Determine corner terms based on primary wall orientation
