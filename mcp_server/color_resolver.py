@@ -94,7 +94,9 @@ def keyword_to_hex(keyword: str) -> str:
         if table_key in key or key in table_key:
             logger.debug(
                 "Resolved color '%s' → #%s (partial match on '%s')",
-                keyword, table_hex, table_key,
+                keyword,
+                table_hex,
+                table_key,
             )
             return table_hex
 

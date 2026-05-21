@@ -163,13 +163,17 @@ class KitchenGraph:
                 if retry_v.score > orig.score:
                     logger.info(
                         "RETRY-USED-IMPROVED: %s retry %.3f > original %.3f",
-                        retry_v.id, retry_v.score, orig.score,
+                        retry_v.id,
+                        retry_v.score,
+                        orig.score,
                     )
                     merged.append(retry_v)
                 else:
                     logger.info(
                         "RETRY-KEPT-ORIGINAL: %s original %.3f >= retry %.3f",
-                        retry_v.id, orig.score, retry_v.score,
+                        retry_v.id,
+                        orig.score,
+                        retry_v.score,
                     )
                     merged.append(orig)
             validated = merged

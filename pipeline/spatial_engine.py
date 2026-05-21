@@ -183,8 +183,7 @@ class SpatialEngine:
         for wall in walls:
             # Find all openings that block this wall
             relevant = (
-                exclusions if include_windows
-                else [e for e in exclusions if e.kind != "window"]
+                exclusions if include_windows else [e for e in exclusions if e.kind != "window"]
             )
             wall_openings = [e for e in relevant if e.wall == wall.anchor]
             blocked_ranges = [(e.blocked_start_mm, e.blocked_end_mm) for e in wall_openings]

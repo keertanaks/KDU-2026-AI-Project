@@ -26,9 +26,9 @@ class OpenRouterModels:
     Verified against GET /api/v1/models on the active OpenRouter account.
     """
 
-    HAIKU = "anthropic/claude-haiku-4.5"    # same as Models.HAIKU
-    SONNET = "anthropic/claude-sonnet-4.6"   # same as Models.SONNET
-    OPUS = "anthropic/claude-opus-4.7"       # same as Models.OPUS — retry only
+    HAIKU = "anthropic/claude-haiku-4.5"  # same as Models.HAIKU
+    SONNET = "anthropic/claude-sonnet-4.6"  # same as Models.SONNET
+    OPUS = "anthropic/claude-opus-4.7"  # same as Models.OPUS — retry only
 
 
 # Maps each named agent to its default model.

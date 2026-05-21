@@ -54,10 +54,16 @@ _FAMILY_WALLS: dict[str, int] = {"I": 1, "L": 2, "U": 3}
 # Shape names MUST match the SHAPES enum exactly so Agent 3 picks them reliably.
 SEEDS: dict[int, str] = {
     1: ("room_shape MUST be L. Maximise counter run on the longest wall. Fridge at far end."),
-    2: ("room_shape MUST be U. Close the work triangle tightly. Dishwasher opposite the sink wall."),
-    3: ("room_shape MUST be I. Single-wall run only. Minimise total cabinet cost. Use narrower SKUs where possible."),
+    2: (
+        "room_shape MUST be U. Close the work triangle tightly. Dishwasher opposite the sink wall."
+    ),
+    3: (
+        "room_shape MUST be I. Single-wall run only. Minimise total cabinet cost. Use narrower SKUs where possible."
+    ),
     4: "room_shape MUST be L. Maximise storage. Prioritise tall cabinets and wall cabinets over base units.",
-    5: ("room_shape MUST be U. Accessibility focus. Maximise aisle widths. No tall cabinets blocking circulation."),
+    5: (
+        "room_shape MUST be U. Accessibility focus. Maximise aisle widths. No tall cabinets blocking circulation."
+    ),
 }
 
 # Regex patterns matching the allowed semantic vocabulary
@@ -228,7 +234,9 @@ class LayoutStrategist:
         effective_family = self._effective_family(variant_index, intent, spatial)
         model = for_agent("layout_strategist", is_retry=is_retry)
         seed = self._build_seed_suffix(variant_index, effective_family)
-        user_msg = self._build_user_message(intent, preprocessing, spatial, seed, violations, variant_index)
+        user_msg = self._build_user_message(
+            intent, preprocessing, spatial, seed, violations, variant_index
+        )
 
         try:
             response = await asyncio.to_thread(
@@ -278,7 +286,6 @@ class LayoutStrategist:
             "You output ONE variant per call. Semantic placement only — never numbers, "
             "never mm, never coordinates. The Placement Engine resolves all geometry.\n"
             "Respond ONLY via the plan_layout tool. No free-text.\n\n"
-
             # ── CORE CONTRACT ──────────────────────────────────────────────
             "== CORE CONTRACT ==\n"
             "Primary output: item_hints — one entry per item type, with {wall, position}.\n"
@@ -286,7 +293,6 @@ class LayoutStrategist:
             "item_hints first.\n"
             "Use ONLY walls listed under 'Cabinet walls' in the user message. "
             "Do NOT invent walls, zones, or SKUs.\n\n"
-
             # ── LAYOUT FAMILIES ────────────────────────────────────────────
             "== LAYOUT FAMILIES (STRICT) ==\n"
             "L = exactly TWO adjacent cabinet walls.\n"
@@ -294,7 +300,6 @@ class LayoutStrategist:
             "I = exactly ONE cabinet wall — all items on that wall, no exceptions.\n"
             "The required family is given in the user message. Match it exactly.\n"
             "Never output 'island' as a family.\n\n"
-
             # ── SEMANTIC VOCABULARY ────────────────────────────────────────
             "== SEMANTIC VOCABULARY (only these terms allowed) ==\n"
             '  Corners : "at north-west corner" | "at north-east corner"\n'
@@ -307,7 +312,6 @@ class LayoutStrategist:
             "Replace {wall} with a cabinet-wall name from the input. "
             "Replace {item} with one of: fridge, sink, dishwasher, stove, hood, "
             "tall_cabinet.\n\n"
-
             # ── ZONE RULES ─────────────────────────────────────────────────
             "== ZONE RULES ==\n"
             "Required zones (one each, no duplicates): cooling, cleaning, cooking, "
@@ -319,7 +323,6 @@ class LayoutStrategist:
             "  preparation = counter / base cabinets\n"
             "  storage     = wall cabinets, tall cabinets, pantry\n"
             "Assign every required zone exactly once. Never emit two cooling zones.\n\n"
-
             # ── APPLIANCE RULES (item_hints contract) ──────────────────────
             "== APPLIANCE RULES (apply to item_hints) ==\n"
             "FRIDGE   → position MUST be a corner term. "
@@ -333,7 +336,6 @@ class LayoutStrategist:
             "OVEN / MICROWAVE → place on cooking wall; use end or 'next to stove'.\n"
             "TALL_CABINET → position = 'left end of {wall}' or 'right end of {wall}'. "
             "Never in the middle.\n\n"
-
             # ── WORKFLOW ───────────────────────────────────────────────────
             "== WORKFLOW (one canonical sequence) ==\n"
             "cooling → preparation → cleaning → preparation → cooking\n"
@@ -346,13 +348,11 @@ class LayoutStrategist:
             "sink on secondary wall (especially if it has a window).\n"
             "  U-shape: split fridge / sink / stove across two or three walls — "
             "fridge on one wall, sink on another, stove on a third or back on fridge wall.\n\n"
-
             # ── DOORS / WINDOWS ────────────────────────────────────────────
             "== DOORS / WINDOWS ==\n"
             "Never place an item in a door swing area.\n"
             "Sink is strongly preferred on a wall with a window.\n"
             "Wall cabinets must not block windows; base cabinets may sit below windows.\n\n"
-
             # ── OUTPUT EXAMPLE ─────────────────────────────────────────────
             "== OUTPUT EXAMPLE (L-shape, north + east walls, window on east) ==\n"
             "item_hints = {\n"
@@ -371,7 +371,6 @@ class LayoutStrategist:
             "  {'north_wall': ['at north-west corner', 'centre of north_wall', "
             "'above stove', 'right end of north_wall'],\n"
             "   'east_wall':  ['near east_wall window', 'next to sink']}\n\n"
-
             # ── FINAL CHECK ────────────────────────────────────────────────
             "== FINAL CHECK (verify before calling the tool) ==\n"
             " 1. family is exactly L, U, or I (never island).\n"
@@ -418,7 +417,11 @@ class LayoutStrategist:
             s.width_mm for skus in preprocessing.zone_groups.values() for s in skus
         )
 
-        primary_wall = max(wall_lengths, key=lambda n: wall_lengths[n]) if wall_lengths else (walls[0] if walls else "")
+        primary_wall = (
+            max(wall_lengths, key=lambda n: wall_lengths[n])
+            if wall_lengths
+            else (walls[0] if walls else "")
+        )
         secondary_walls = [w for w in walls if w != primary_wall]
         secondary = secondary_walls[0] if secondary_walls else primary_wall
         tertiary = secondary_walls[1] if len(secondary_walls) >= 2 else secondary
@@ -714,19 +717,25 @@ class LayoutStrategist:
 
     # Item types we will accept in item_hints; anything else is dropped
     _VALID_ITEM_TYPES: tuple[str, ...] = (
-        "fridge", "sink", "dishwasher", "stove", "hood",
-        "oven", "microwave", "tall_cabinet",
+        "fridge",
+        "sink",
+        "dishwasher",
+        "stove",
+        "hood",
+        "oven",
+        "microwave",
+        "tall_cabinet",
     )
 
     # Corner terms allowed for fridge
     _CORNER_TERMS: tuple[str, ...] = (
-        "at north-west corner", "at north-east corner",
-        "at south-west corner", "at south-east corner",
+        "at north-west corner",
+        "at north-east corner",
+        "at south-west corner",
+        "at south-east corner",
     )
 
-    def _sanitise_item_hints(
-        self, raw: dict[str, Any]
-    ) -> dict[str, dict[str, str]]:
+    def _sanitise_item_hints(self, raw: dict[str, Any]) -> dict[str, dict[str, str]]:
         """Drop hints with invalid item types, missing fields, or numeric positions.
 
         Cross-item consistency (dishwasher.wall == sink.wall, hood.wall == stove.wall)
@@ -857,7 +866,10 @@ class LayoutStrategist:
             fallback = "L" if cap_walls >= 2 else "I"
             logger.warning(
                 "TYPOLOGY-UNAVAILABLE: requested %s, capacity %s (%d walls) — fallback %s",
-                requested, capacity, cap_walls, fallback,
+                requested,
+                capacity,
+                cap_walls,
+                fallback,
             )
             return fallback
 

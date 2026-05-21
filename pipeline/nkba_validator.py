@@ -56,10 +56,15 @@ Z_LEVEL_SPLIT_MM: float = 500.0  # items below this z are floor-level, above are
 # These count toward the continuous run (LAYOUT-03) and do not trigger
 # LAYOUT-04 adjacency failures (they are their own base-level support).
 _FLOOR_RUN_KW: tuple[str, ...] = (
-    "base_cabinet", "corner_cabinet",
-    "sink", "dishwasher",
-    "stove", "range", "cooktop",
-    "fridge", "refrigerator",
+    "base_cabinet",
+    "corner_cabinet",
+    "sink",
+    "dishwasher",
+    "stove",
+    "range",
+    "cooktop",
+    "fridge",
+    "refrigerator",
     "tall_cabinet",
 )
 # Truly standalone floor-level appliances — self-supporting, no adjacent base cabinet
@@ -67,8 +72,11 @@ _FLOOR_RUN_KW: tuple[str, ...] = (
 # whose LAYOUT-04 compliance is checked separately (integrated + adjacent run unit).
 _STANDALONE_APPLIANCE_KW: tuple[str, ...] = (
     "dishwasher",
-    "stove", "range", "cooktop",
-    "fridge", "refrigerator",
+    "stove",
+    "range",
+    "cooktop",
+    "fridge",
+    "refrigerator",
 )
 
 # Sink-as-integrated-base-fixture: valid height range (mm) matching base cabinet height.
@@ -101,9 +109,9 @@ _INFORMATIONAL_LOG_PREFIXES: tuple[str, ...] = (
 )
 
 # Score caps applied after the raw formula.
-_SCORE_CAP_ANY_VIOLATION: float = 0.95   # any rule violated
-_SCORE_CAP_COLLISION: float = 0.80       # real floor-level overlap
-_SCORE_CAP_LAYOUT_RUN: float = 0.88      # LAYOUT-03 or LAYOUT-04
+_SCORE_CAP_ANY_VIOLATION: float = 0.95  # any rule violated
+_SCORE_CAP_COLLISION: float = 0.80  # real floor-level overlap
+_SCORE_CAP_LAYOUT_RUN: float = 0.88  # LAYOUT-03 or LAYOUT-04
 
 
 # ============================================================================
@@ -165,7 +173,8 @@ class NKBAValidator:
 
         # Hard spillover only — informational entries do not penalise score.
         hard_spillover_count = sum(
-            1 for entry in placed.spillover_log
+            1
+            for entry in placed.spillover_log
             if not any(entry.startswith(p) for p in _INFORMATIONAL_LOG_PREFIXES)
         )
 
@@ -223,8 +232,7 @@ class NKBAValidator:
         rationale = generate_rationale(violations)
 
         logger.info(
-            "Variant '%s': score=%.3f passed=%d/%d hard_spill=%d "
-            "collisions=%d weight=%.2f caps=%s",
+            "Variant '%s': score=%.3f passed=%d/%d hard_spill=%d collisions=%d weight=%.2f caps=%s",
             placed.variant_id,
             score,
             passed_rules,
@@ -239,10 +247,14 @@ class NKBAValidator:
                 logger.warning(
                     "COLLISION-PAIR: %s(%s) x=[%.0f,%.0f] <-> %s(%s) x=[%.0f,%.0f] "
                     "overlap=%.0fmm wall=%s",
-                    cp["id_a"], cp["type_a"],
-                    cp["bbox_a"]["x1"], cp["bbox_a"]["x2"],
-                    cp["id_b"], cp["type_b"],
-                    cp["bbox_b"]["x1"], cp["bbox_b"]["x2"],
+                    cp["id_a"],
+                    cp["type_a"],
+                    cp["bbox_a"]["x1"],
+                    cp["bbox_a"]["x2"],
+                    cp["id_b"],
+                    cp["type_b"],
+                    cp["bbox_b"]["x1"],
+                    cp["bbox_b"]["x2"],
                     cp["overlap_mm"],
                     cp["wall"],
                 )
@@ -1080,9 +1092,7 @@ class NKBAValidator:
                 tag_a = (a.category + " " + a.name).lower()
                 tag_b = (b.category + " " + b.name).lower()
                 # Tap/sink: always whitelisted
-                if ("tap" in tag_a and "sink" in tag_b) or (
-                    "tap" in tag_b and "sink" in tag_a
-                ):
+                if ("tap" in tag_a and "sink" in tag_b) or ("tap" in tag_b and "sink" in tag_a):
                     continue
                 # Hood/stove: exempt only when Z ranges are separated
                 if ("hood" in tag_a and ("stove" in tag_b or "range" in tag_b)) or (
@@ -1107,16 +1117,26 @@ class NKBAValidator:
                 if ax2 <= bx1 or bx2 <= ax1:
                     continue  # no x overlap
                 overlap = min(ax2, bx2) - max(ax1, bx1)
-                pairs.append({
-                    "id_a": sid_a,
-                    "type_a": a.category,
-                    "id_b": sid_b,
-                    "type_b": b.category,
-                    "bbox_a": {"x1": round(ax1), "x2": round(ax2), "z": round(a.position_mm["z"])},
-                    "bbox_b": {"x1": round(bx1), "x2": round(bx2), "z": round(b.position_mm["z"])},
-                    "wall": a.anchor_wall,
-                    "overlap_mm": round(overlap),
-                })
+                pairs.append(
+                    {
+                        "id_a": sid_a,
+                        "type_a": a.category,
+                        "id_b": sid_b,
+                        "type_b": b.category,
+                        "bbox_a": {
+                            "x1": round(ax1),
+                            "x2": round(ax2),
+                            "z": round(a.position_mm["z"]),
+                        },
+                        "bbox_b": {
+                            "x1": round(bx1),
+                            "x2": round(bx2),
+                            "z": round(b.position_mm["z"]),
+                        },
+                        "wall": a.anchor_wall,
+                        "overlap_mm": round(overlap),
+                    }
+                )
         return pairs
 
     @staticmethod

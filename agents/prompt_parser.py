@@ -145,10 +145,8 @@ class PromptParser:
             "Your ONLY job: read the user's free-text prompt and extract structured fields.\n"
             "NEVER fail. NEVER refuse. ALWAYS call extract_intent with best-effort values.\n"
             "If a field is not mentioned in the prompt, return null for that field.\n\n"
-
             # ── FIELD RULES ───────────────────────────────────────────────
             "FIELD EXTRACTION RULES:\n\n"
-
             "1. COLOR\n"
             "   Extract the color word/phrase the user mentioned (color_keyword).\n"
             "   Then resolve it to a hex code (color_hex) using this reference table\n"
@@ -166,7 +164,6 @@ class PromptParser:
             "   If the color is not in this table, use your knowledge to estimate the hex.\n"
             "   Always include the # prefix in color_hex (e.g. #1F3A5F not 1F3A5F).\n"
             "   If no color is mentioned → set both color_keyword and color_hex to null.\n\n"
-
             "2. LAYOUT FAMILY\n"
             "   ONLY set layout_family if the user explicitly names a kitchen shape.\n"
             "   These exact words map to these values:\n"
@@ -178,12 +175,10 @@ class PromptParser:
             "   If the user does NOT mention a shape → set layout_family to null.\n"
             "   (null means the system will auto-generate L, U, and I variants — this is correct.)\n"
             "   NEVER infer a shape from style words like 'modern' or 'compact'.\n\n"
-
             "3. STYLE\n"
             "   Capture any aesthetic/design style words: modern, contemporary, traditional,\n"
             "   classic, minimalist, rustic, farmhouse, industrial, Scandinavian, shaker, etc.\n"
             "   Use lowercase. If multiple styles → pick the strongest one. Null if not mentioned.\n\n"
-
             "4. BUDGET TIER\n"
             "   Map budget words to: low, mid, high, premium.\n"
             "     cheap / affordable / budget / economy → 'low'\n"
@@ -191,47 +186,37 @@ class PromptParser:
             "     high-end / quality / expensive        → 'high'\n"
             "     luxury / premium / bespoke / top      → 'premium'\n"
             "   Null if not mentioned.\n\n"
-
             "5. CABINET PREFERENCE\n"
             "   ONLY set if user explicitly states a cabinet configuration:\n"
             "     'base cabinets only' / 'no wall cabinets' / 'open shelving only' → 'base_only'\n"
             "     'with wall cabinets' / 'upper cabinets' / 'with uppers'          → 'with_uppers'\n"
             "     'with tall cabinets' / 'with pantry' / 'floor to ceiling'        → 'with_tall'\n"
             "   Null if not explicitly stated.\n\n"
-
             "6. SPECIAL REQUESTS\n"
             "   Capture any kitchen feature requests as a list of short phrases:\n"
             "   island, breakfast bar, pantry, wine fridge, double oven, extra storage,\n"
             "   open shelving, microwave, pot filler, coffee station, walk-in pantry, etc.\n"
             "   Empty array [] if none mentioned.\n\n"
-
             "7. MUST_HAVE and AVOID\n"
             "   Do NOT extract these from the prompt. Always return empty arrays [].\n"
             "   (They are loaded separately from the input JSON preferences.)\n\n"
-
             "8. IGNORED\n"
             "   If the prompt contains non-kitchen requests (AC, TV, sofa, lighting, etc.),\n"
             "   list them here so the system can inform the user. Empty array [] if none.\n\n"
-
             # ── FEW-SHOT EXAMPLES ─────────────────────────────────────────
             "EXAMPLES:\n\n"
-
             'Prompt: "I want a modern navy blue L-shaped kitchen with an island"\n'
             "→ color_keyword='navy blue'  color_hex='#1F3A5F'  layout_family='L'\n"
             "   style='modern'  special_requests=['island']  budget_tier=null\n\n"
-
             'Prompt: "Give me a cheap galley kitchen, white cabinets, no frills"\n'
             "→ color_keyword='white'  color_hex='#FFFFFF'  layout_family='I'\n"
             "   style=null  cabinet_preference='base_only'  budget_tier='low'\n\n"
-
             'Prompt: "Traditional oak kitchen, I also want AC and good lighting"\n'
             "→ color_keyword='oak'  color_hex='#C8A878'  layout_family=null\n"
             "   style='traditional'  ignored=['AC', 'lighting']  budget_tier=null\n\n"
-
             'Prompt: "Something premium and minimalist, floor-to-ceiling cabinets"\n'
             "→ color_keyword=null  color_hex=null  layout_family=null\n"
             "   style='minimalist'  cabinet_preference='with_tall'  budget_tier='premium'\n\n"
-
             "Always call extract_intent with ALL required fields."
         )
 
@@ -399,9 +384,7 @@ class PromptParser:
             layout_family = "I"
 
         # Style
-        style = next(
-            (w for w in STYLE_WORDS if re.search(rf"\b{w}\b", compact)), None
-        )
+        style = next((w for w in STYLE_WORDS if re.search(rf"\b{w}\b", compact)), None)
 
         # Budget
         budget_tier: str | None = None
@@ -433,12 +416,21 @@ class PromptParser:
 
         # Special requests
         special_kws = [
-            "island", "breakfast bar", "pantry", "wine fridge", "double oven",
-            "extra storage", "open shelving", "microwave", "pot filler",
-            "coffee station", "walk in pantry",
+            "island",
+            "breakfast bar",
+            "pantry",
+            "wine fridge",
+            "double oven",
+            "extra storage",
+            "open shelving",
+            "microwave",
+            "pot filler",
+            "coffee station",
+            "walk in pantry",
         ]
         special_requests = [
-            kw for kw in special_kws
+            kw
+            for kw in special_kws
             if re.search(rf"\b{re.escape(kw.replace('-', ' '))}\b", compact)
         ]
 
@@ -471,8 +463,14 @@ class PromptParser:
         """
         merged = dict(llm_result or {})
 
-        for key in ("color_keyword", "color_hex", "layout_family", "style",
-                    "cabinet_preference", "budget_tier"):
+        for key in (
+            "color_keyword",
+            "color_hex",
+            "layout_family",
+            "style",
+            "cabinet_preference",
+            "budget_tier",
+        ):
             if deterministic.get(key) is not None:
                 merged[key] = deterministic[key]
 
