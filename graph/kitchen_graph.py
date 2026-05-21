@@ -35,6 +35,7 @@ class KitchenGraph:
         self,
         client: anthropic.Anthropic | OpenRouterCompat,
         output_path: str = "latest_run.json",
+        out_dir: str = "renders",
     ) -> None:
         """Initialise all pipeline layers and compile the graph."""
         self._spatial = SpatialEngine()
@@ -42,7 +43,7 @@ class KitchenGraph:
         self._zone_planner = ZonePlanner(client)
         self._placement = PlacementEngine()
         self._validator = NKBAValidator()
-        self._output = OutputGenerator(client)
+        self._output = OutputGenerator(client, out_dir=out_dir)
         self._output_path = output_path
         self._start_time = 0.0
         self._graph = self._build()
