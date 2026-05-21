@@ -25,7 +25,10 @@ from components.room_picker import render_room_picker
 from components.variant_card import render_variant_card, score_badge, zone_pills_html
 
 from utils.logger import get_logger
-from llmops.guardrails import run_all_guardrails
+try:
+    from llmops.guardrails import run_all_guardrails
+except ModuleNotFoundError:
+    run_all_guardrails = None  # type: ignore[assignment]
 
 logger = get_logger(__name__)
 
@@ -443,10 +446,14 @@ with tab4:
                 result if isinstance(result, dict) else None
             )
 
-            _guard_results = run_all_guardrails(
-                input_json=_stored_input,
-                output_json=_output_for_guard,
-            )
+            if run_all_guardrails is None:
+                st.info("Guardrail module not available.")
+                _guard_results = {}
+            else:
+                _guard_results = run_all_guardrails(
+                    input_json=_stored_input,
+                    output_json=_output_for_guard,
+                )
 
             _guard_labels: dict[str, str] = {
                 "input": "Input Guardrail",
