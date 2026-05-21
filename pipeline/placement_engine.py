@@ -1265,7 +1265,6 @@ class PlacementEngine:
         if not wall_cabs:
             return
         wall_cabs.sort(key=lambda s: s.width_mm, reverse=True)
-        narrowest = min(s.width_mm for s in wall_cabs)
 
         # Pre-compute which walls actually have floor-level items — only those
         # walls should get an upper run.  This prevents wall cabs being placed
@@ -1284,34 +1283,74 @@ class PlacementEngine:
                 continue
             subranges = self._free_subranges(wall, placed, spatial, _WALL_CAB_Z_MM)
             for fs, fe in subranges:
+                combo = self._dp_fill_wall_cabs(int(fe - fs), wall_cabs)
                 cursor = fs
-                while fe - cursor >= narrowest - 1.0:
-                    remaining = fe - cursor
-                    placed_one = False
-                    for sku in wall_cabs:
-                        if sku.width_mm > remaining + 1.0:
-                            continue
-                        placement_id = self._unique_placement_id(sku.sku_id, placed)
-                        placed[placement_id] = self._make_item(
-                            sku,
-                            "storage",
-                            cursor,
-                            wall.thickness_mm,
-                            _WALL_CAB_Z_MM,
-                            wall.name,
-                        )
-                        logger.debug(
-                            "WALL-CAB: %s (%.0fmm) at x=%.0f on %s",
-                            placement_id,
-                            sku.width_mm,
-                            cursor,
-                            wall.name,
-                        )
-                        cursor += sku.width_mm
-                        placed_one = True
-                        break
-                    if not placed_one:
-                        break  # residual gap smaller than narrowest wall cab
+                for sku in combo:
+                    placement_id = self._unique_placement_id(sku.sku_id, placed)
+                    placed[placement_id] = self._make_item(
+                        sku,
+                        "storage",
+                        cursor,
+                        wall.thickness_mm,
+                        _WALL_CAB_Z_MM,
+                        wall.name,
+                    )
+                    logger.debug(
+                        "WALL-CAB: %s (%.0fmm) at x=%.0f on %s",
+                        placement_id,
+                        sku.width_mm,
+                        cursor,
+                        wall.name,
+                    )
+                    cursor += sku.width_mm
+
+    def _dp_fill_wall_cabs(self, target_mm: int, wall_cabs: list[SKU]) -> list[SKU]:
+        """Return the ordered list of wall-cab SKUs that best fills target_mm.
+
+        Uses wide-biased unbounded knapsack: minimise residual gap first, then
+        minimise cabinet count (prefer fewer, wider cabs over many narrow ones).
+        E.g. 1050mm → [750, 300] not [900] with 150mm gap; 1500mm → [1200, 300].
+        """
+        if target_mm <= 0 or not wall_cabs:
+            return []
+        widths = sorted({int(s.width_mm) for s in wall_cabs}, reverse=True)
+        INF = float("inf")
+        # dp[amt] = (gap, n_cabs) — best state reaching exactly amt mm filled
+        dp: list[tuple[float, int]] = [(INF, INF)] * (target_mm + 1)
+        dp[0] = (0.0, 0)
+        chosen: list[int | None] = [None] * (target_mm + 1)
+        for amt in range(1, target_mm + 1):
+            for w in widths:
+                if w > amt:
+                    continue
+                prev_gap, prev_n = dp[amt - w]
+                if prev_gap == INF:
+                    continue
+                cur_gap, cur_n = dp[amt]
+                new_gap = float(target_mm - amt)
+                new_n = prev_n + 1
+                if new_gap < cur_gap or (new_gap == cur_gap and new_n < cur_n):
+                    dp[amt] = (new_gap, new_n)
+                    chosen[amt] = w
+        # find best filled amount (min gap, then fewest cabs)
+        best_amt = max(
+            (a for a in range(target_mm + 1) if dp[a][0] < INF),
+            key=lambda a: (-dp[a][0], -dp[a][1]),
+        )
+        # reconstruct width sequence
+        width_seq: list[int] = []
+        cur = best_amt
+        while cur > 0 and chosen[cur] is not None:
+            w = chosen[cur]
+            width_seq.append(w)
+            cur -= w
+        # map each width → best matching SKU (widths already sorted wide-first)
+        width_to_sku: dict[int, SKU] = {}
+        for sku in wall_cabs:
+            iw = int(sku.width_mm)
+            if iw not in width_to_sku:
+                width_to_sku[iw] = sku
+        return [width_to_sku[w] for w in width_seq if w in width_to_sku]
 
     def _get_wall_cab_height(self, preprocessing: PreprocessingOutput) -> float:
         """Return height of standard (non-corner) wall cabinet SKUs; fallback 700mm."""
