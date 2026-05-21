@@ -3,9 +3,9 @@
     "floor": {
       "points": [
         { "x": 0,     "y": 0,     "z": 0 },
-        { "x": 42000, "y": 0,     "z": 0 },
-        { "x": 42000, "y": 42000, "z": 0 },
-        { "x": 0,     "y": 42000, "z": 0 }
+        { "x": 4200, "y": 0,     "z": 0 },
+        { "x": 4200, "y": 4200, "z": 0 },
+        { "x": 0,     "y": 4200, "z": 0 }
       ]
     },
 
@@ -15,11 +15,11 @@
         "anchor": "south",
         "thickness_mm": 100,
         "has_cabinets": false,
-        "dimensions": { "length_mm": 42000, "height": 2700 },
+        "dimensions": { "length_mm": 4200, "height": 2700 },
         "points": [
           { "x": 0,     "y": 0, "z": 0    },
-          { "x": 42000, "y": 0, "z": 0    },
-          { "x": 42000, "y": 0, "z": 2700 },
+          { "x": 4200, "y": 0, "z": 0    },
+          { "x": 4200, "y": 0, "z": 2700 },
           { "x": 0,     "y": 0, "z": 2700 }
         ]
       },
@@ -28,12 +28,12 @@
         "anchor": "north",
         "thickness_mm": 100,
         "has_cabinets": true,
-        "dimensions": { "length_mm": 42000, "height": 2700 },
+        "dimensions": { "length_mm": 4200, "height": 2700 },
         "points": [
-          { "x": 0,     "y": 42000, "z": 0    },
-          { "x": 42000, "y": 42000, "z": 0    },
-          { "x": 42000, "y": 42000, "z": 2700 },
-          { "x": 0,     "y": 42000, "z": 2700 }
+          { "x": 0,     "y": 4200, "z": 0    },
+          { "x": 4200, "y": 4200, "z": 0    },
+          { "x": 4200, "y": 4200, "z": 2700 },
+          { "x": 0,     "y": 4200, "z": 2700 }
         ]
       },
       {
@@ -41,24 +41,24 @@
         "anchor": "east",
         "thickness_mm": 100,
         "has_cabinets": true,
-        "dimensions": { "length_mm": 42000, "height": 2700 },
+        "dimensions": { "length_mm": 4200, "height": 2700 },
         "points": [
-          { "x": 42000, "y": 0,     "z": 0    },
-          { "x": 42000, "y": 42000, "z": 0    },
-          { "x": 42000, "y": 42000, "z": 2700 },
-          { "x": 42000, "y": 0,     "z": 2700 }
+          { "x": 4200, "y": 0,     "z": 0    },
+          { "x": 4200, "y": 4200, "z": 0    },
+          { "x": 4200, "y": 4200, "z": 2700 },
+          { "x": 4200, "y": 0,     "z": 2700 }
         ]
       },
       {
         "name": "west_wall",
         "anchor": "west",
         "thickness_mm": 100,
-        "has_cabinets": false,
-        "dimensions": { "length_mm": 42000, "height": 2700 },
+        "has_cabinets": true,
+        "dimensions": { "length_mm": 4200, "height": 2700 },
         "points": [
           { "x": 0, "y": 0,     "z": 0    },
-          { "x": 0, "y": 42000, "z": 0    },
-          { "x": 0, "y": 42000, "z": 2700 },
+          { "x": 0, "y": 4200, "z": 0    },
+          { "x": 0, "y": 4200, "z": 2700 },
           { "x": 0, "y": 0,     "z": 2700 }
         ]
       }
