@@ -2202,10 +2202,12 @@ class PlacementEngine:
     ) -> list[tuple[float, float]]:
         """Return sorted (start, end) x-ranges on wall at the same z-level band.
 
-        Floor-level items (z < 500) only block other floor items.
-        Wall-level items (z >= 500) are blocked by other wall-level items AND by
-        tall floor items whose top surface extends into the wall cabinet zone
-        (Fix 4: fridge at z=0, height=1700mm extends to 1700mm > 1510mm wall-cab bottom).
+        Floor queries (z_level < 500): only items whose z < Z_LEVEL_SPLIT_MM block.
+        Wall queries (z_level >= 500): only items whose top surface (z + height)
+        exceeds z_level block — this correctly passes over countertop items like a
+        microwave at z=900mm (top≈1300mm) that sit below the wall-cab zone at 1510mm,
+        while still blocking tall floor items (fridge top=1700mm > 1510mm) and
+        already-placed wall items.
         """
         is_floor = z_level < Z_LEVEL_SPLIT_MM
         ranges: list[tuple[float, float]] = []
@@ -2214,17 +2216,16 @@ class PlacementEngine:
                 continue
             item_z = item.position_mm["z"]
             item_h = item.dimensions_mm["height"]
-            item_is_floor = item_z < Z_LEVEL_SPLIT_MM
             x = item.position_mm["x"]
             w = item.dimensions_mm["width"]
 
             if is_floor:
                 # Floor level: only block other floor items
-                if item_is_floor:
+                if item_z < Z_LEVEL_SPLIT_MM:
                     ranges.append((x, x + w))
             else:
-                # Wall level: block wall items directly
-                if not item_is_floor or (item_z + item_h) > Z_WALL_CAB_BOTTOM_MM:
+                # Wall level: block only items whose top reaches into the wall-cab zone
+                if (item_z + item_h) > z_level:
                     ranges.append((x, x + w))
         ranges.sort()
         return ranges
