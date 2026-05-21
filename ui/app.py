@@ -25,6 +25,7 @@ from components.room_picker import render_room_picker
 from components.variant_card import render_variant_card, score_badge, zone_pills_html
 
 from utils.logger import get_logger
+from llmops.guardrails import run_all_guardrails
 
 logger = get_logger(__name__)
 
@@ -177,6 +178,7 @@ if generate and input_json:
     result = run_pipeline_with_log(input_json)
     if result is not None:
         st.session_state["result"] = result
+        st.session_state["input_json"] = input_json
         st.rerun()
 
 # ============================================================================
@@ -433,3 +435,44 @@ with tab4:
                 }
             )
         st.dataframe(comparison_rows, width="stretch", hide_index=True)
+
+        st.divider()
+        with st.expander("🛡️ Guardrail Report", expanded=False):
+            _stored_input: dict[str, Any] | None = st.session_state.get("input_json")
+            _output_for_guard: dict[str, Any] | None = (
+                result if isinstance(result, dict) else None
+            )
+
+            _guard_results = run_all_guardrails(
+                input_json=_stored_input,
+                output_json=_output_for_guard,
+            )
+
+            _guard_labels: dict[str, str] = {
+                "input": "Input Guardrail",
+                "output": "Output Guardrail",
+            }
+
+            for _gkey, _glabel in _guard_labels.items():
+                _gr = _guard_results.get(_gkey)
+                if _gr is None:
+                    st.markdown(
+                        f'<span style="background:#30363D;color:#8B949E;padding:2px 10px;'
+                        f'border-radius:10px;font-size:0.8rem">⏭ {_glabel}: skipped</span>',
+                        unsafe_allow_html=True,
+                    )
+                    continue
+                _badge_bg = "#38A169" if _gr.passed else "#E53E3E"
+                _badge_icon = "✅" if _gr.passed else "❌"
+                _badge_text = "PASS" if _gr.passed else "FAIL"
+                st.markdown(
+                    f'<span style="background:{_badge_bg};color:#fff;padding:2px 10px;'
+                    f'border-radius:10px;font-size:0.8rem">'
+                    f"{_badge_icon} {_glabel}: {_badge_text}</span>",
+                    unsafe_allow_html=True,
+                )
+                for _viol in _gr.violations:
+                    if _viol.severity == "error":
+                        st.error(f"[{_viol.rule_id}] {_viol.message}")
+                    else:
+                        st.warning(f"[{_viol.rule_id}] {_viol.message}")
