@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-
 import pytest
+
 from tests.fixtures.sample_inputs import INPUT1, INPUT3, MINIMAL_PREFERENCES
 
 
@@ -51,7 +49,6 @@ async def test_full_pipeline_input3_with_openings():
 async def test_output_json_matches_render_contract():
     """output.json must pass render.py without errors."""
     import subprocess
-    from pathlib import Path
 
     result = subprocess.run(
         ["python", "render.py", "output.json", "--out-dir", "renders", "--2d-only"],

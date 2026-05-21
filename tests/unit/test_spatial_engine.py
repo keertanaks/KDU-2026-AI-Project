@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from tests.fixtures.sample_inputs import INPUT1, INPUT2, INPUT3
 
 

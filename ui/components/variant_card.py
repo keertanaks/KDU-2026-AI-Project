@@ -172,8 +172,12 @@ def render_variant_card(v: Any, index: int) -> None:
         }
 
         for item in layout.values():
-            if (item.get("is_wall") or item.get("is_floor") or
-                item.get("is_door") or item.get("is_window")):
+            if (
+                item.get("is_wall")
+                or item.get("is_floor")
+                or item.get("is_door")
+                or item.get("is_window")
+            ):
                 continue
 
             pos = item.get("position_mm", {})
@@ -191,13 +195,26 @@ def render_variant_card(v: Any, index: int) -> None:
 
             # Box vertices
             vertices = [
-                [x, y, z], [x + w, y, z], [x + w, y + d, z], [x, y + d, z],
-                [x, y, z + h], [x + w, y, z + h], [x + w, y + d, z + h], [x, y + d, z + h],
+                [x, y, z],
+                [x + w, y, z],
+                [x + w, y + d, z],
+                [x, y + d, z],
+                [x, y, z + h],
+                [x + w, y, z + h],
+                [x + w, y + d, z + h],
+                [x, y + d, z + h],
             ]
 
             # Box faces as triangles
             i, j, k = [], [], []
-            faces = [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [2, 6, 7, 3], [0, 3, 7, 4], [1, 5, 6, 2]]
+            faces = [
+                [0, 1, 2, 3],
+                [4, 7, 6, 5],
+                [0, 4, 5, 1],
+                [2, 6, 7, 3],
+                [0, 3, 7, 4],
+                [1, 5, 6, 2],
+            ]
 
             for face in faces:
                 for idx in range(len(face) - 2):
@@ -209,8 +226,15 @@ def render_variant_card(v: Any, index: int) -> None:
 
             fig.add_trace(
                 go.Mesh3d(
-                    x=x_v, y=y_v, z=z_v, i=i, j=j, k=k,
-                    color=color, opacity=0.8, name=item_name,
+                    x=x_v,
+                    y=y_v,
+                    z=z_v,
+                    i=i,
+                    j=j,
+                    k=k,
+                    color=color,
+                    opacity=0.8,
+                    name=item_name,
                 )
             )
 
@@ -219,11 +243,15 @@ def render_variant_card(v: Any, index: int) -> None:
                 xaxis=dict(title="X (mm)", backgroundcolor="#1C2128"),
                 yaxis=dict(title="Y (mm)", backgroundcolor="#1C2128"),
                 zaxis=dict(title="Z (mm)", backgroundcolor="#1C2128"),
-                bgcolor="#161B22", aspectmode="data",
+                bgcolor="#161B22",
+                aspectmode="data",
             ),
             title=f"Interactive 3D: {v_id} ({family})",
-            template="plotly_dark", font=dict(color="#E6EDF3"),
-            paper_bgcolor="#161B22", plot_bgcolor="#1C2128", height=650,
+            template="plotly_dark",
+            font=dict(color="#E6EDF3"),
+            paper_bgcolor="#161B22",
+            plot_bgcolor="#1C2128",
+            height=650,
         )
 
         st.plotly_chart(fig, use_container_width=True)
