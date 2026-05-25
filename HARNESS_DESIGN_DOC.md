@@ -456,6 +456,95 @@ The skill's explicit "Common Failure Modes" section blocked all four of these mi
 
 ---
 
+### Case-01 Deep Dive — Budget Optimizer
+
+**Date:** 2026-05-25
+**Tool:** Claude Code (claude-sonnet-4-6) via /run-eval skill
+**Case:** case-01-budget-optimizer — Add estimated budget calculation with SKU substitution
+
+### What the Coding Session Did
+
+Following the harness workflow autonomously:
+
+1. Read AGENTS.md (AGENT_SPECS.md) ✅
+2. Read 9 relevant skill files (catalog, color-resolution, constraint-validation, continuous-run, variant-generation, rendering, ui-integration, testing-strategy, dto-contracts) ✅
+3. Created `features/active/budget-optimizer/` and filled all 3 templates before writing code ✅
+4. Defined DTOs **first** in `dtos/contracts.py`: `BudgetItemEstimate`, `BudgetEstimateDTO`, `SubstitutionDTO`, `BudgetOptimizationDTO`, plus new field on `VariantSummaryDTO` ✅
+5. Added `ESTIMATED_PRICE_MAP` as named constants — no bare numbers anywhere, all labeled "not real prices" ✅
+6. Created `pipeline/budget_optimizer.py` — all catalog access via `mcp_server/server.py`, never reading `catalog.json` directly ✅
+7. Added `get_substitute_skus()` to `mcp_server/server.py` ✅
+8. Used `mcp_server/color_resolver.py` for color preservation during substitution (delta_e, keyword_to_hex) ✅
+9. Called `pipeline/nkba_validator.py` after every accepted substitution — NKBA score checked; substitution rejected if score drops > 0.05 ✅
+10. Wired `budget_optimization` node into `graph/kitchen_graph.py` between validation → output ✅
+11. Created `ui/components/budget_display.py` — display-only, no business logic ✅
+12. Updated `ui/app.py`: sidebar `number_input` + Tab 1 `render_budget_panel()` ✅
+13. Wrote 16 unit tests in `tests/unit/test_budget_optimizer.py`; added `test_revalidation_after_substitution` to `tests/unit/test_nkba_validator.py`; added SKU fixtures to `tests/fixtures/sample_inputs.py` ✅
+
+### Test Results
+
+```
+pytest tests/unit/ -v
+============================= 55 passed in 0.41s ==============================
+```
+
+**55 of 55 tests pass. Zero regressions. No rules violated.**
+
+### What the Harness Prevented
+
+Without the 9 skills, the coding tool would likely have:
+- Read `catalog.json` directly instead of going through `mcp_server/server.py` (`catalog.md` prevented this)
+- Defined `budget_estimate: float` inline in the pipeline module instead of in `contracts.py` first (`dto-contracts.md` prevented this)
+- Skipped calling `nkba_validator.py` after substitution, allowing invalid layouts to appear optimised (`constraint-validation.md` prevented this)
+- Hardcoded `"claude-sonnet-4-6"` in any new agent code (`llm-routing-and-observability.md` prevented this)
+- Put cost calculation logic inside the Streamlit UI component (`ui-integration.md` prevented this)
+
+The high skill count (9 of 12) reflects how deeply this feature touches the pipeline. The harness guided the correct file for every concern without the session needing to ask.
+
+---
+
+### Case-05 Deep Dive — Color Fallback
+
+**Date:** 2026-05-25
+**Tool:** Claude Code (claude-sonnet-4-6) via /run-eval skill
+**Case:** case-05-color-fallback — Graceful fallback when color resolution fails for unknown color keywords
+
+### What the Coding Session Did
+
+Following the harness workflow autonomously:
+
+1. Read AGENTS.md ✅
+2. Read 3 relevant skill files (color-resolution, catalog, testing-strategy) ✅
+3. Created `features/active/color-fallback/` and filled all 3 templates before writing code ✅
+4. Inspected `mcp_server/color_resolver.py` for existing behavior on unknown keywords ✅
+5. Added `ColorResolution` dataclass with `nearest_match` flag — clear signal to caller that the match is approximate ✅
+6. Implemented `resolve_color_keyword()`: never crashes, always returns a valid 6-char hex, sets `nearest_match=True` when not exact ✅
+7. Kept `keyword_to_hex()` backward-compatible by delegating to the new function ✅
+8. Updated `server.py:resolve_color()` to surface `nearest_match: True` in the response ✅
+9. Threaded color warnings through the correct propagation chain: `PreprocessingOutput.color_warnings[]` → merged into `VariantSummaryDTO.warnings[]` in `nkba_validator.py` ✅
+10. Updated `ui/components/variant_card.py` to render `warnings[]` in amber ⚠️ style (previously silently swallowed) ✅
+11. Wrote 28 new tests across 6 parametrised test functions: no-crash on unknown keyword (9 variants), nearest-match flag set, resolved color has real SKU, exact keyword produces no warning, case-insensitive matching, dark-grey spelling variants ✅
+
+### Test Results
+
+```
+pytest tests/unit/ -v
+============================= 83 passed in 0.53s ==============================
+```
+
+**83 of 83 tests pass. Zero regressions. No rules violated.**
+
+### What the Harness Prevented
+
+Without the 3 skills, the coding tool would likely have:
+- Raised `KeyError` on unknown color keywords instead of returning nearest match (`color-resolution.md` prevented this)
+- Used invented SKU IDs in test fixtures instead of real catalog SKUs (`testing-strategy.md` enforced `tests/fixtures/sample_inputs.py` usage)
+- Returned a hex color with no real SKU backing — visually correct but catalog-invalid (`catalog.md` enforced the real-SKU verification step)
+- Silently swallowed warnings without surfacing them in the UI (the skill's propagation chain diagram guided the `color_warnings → VariantSummaryDTO.warnings` path)
+
+This was the smallest case by file count (3 files) but the most parametrised by test count. The `testing-strategy.md` skill directly guided the 6-function, 28-test structure used.
+
+---
+
 ### Pre-Eval Harness Improvements (Coherence Audit)
 
 Before running any eval, the harness was subjected to a coherence audit that identified 7 failures. All were fixed before evals ran:
