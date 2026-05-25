@@ -45,3 +45,6 @@ renders/
 
 # Logs
 *.log
+
+# Runtime artifacts
+latest_run.json

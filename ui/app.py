@@ -3,16 +3,29 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
-import streamlit as st
+# Add repo root to sys.path so graph/, utils/, layout.py, dtos/ are importable
+# when Streamlit runs ui/app.py (which only adds ui/ to sys.path by default).
+_REPO_ROOT = Path(__file__).parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-from ui.components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
-from ui.components.pipeline_log import run_pipeline_with_log
-from ui.components.room_picker import render_room_picker
-from ui.components.variant_card import render_variant_card, score_badge, zone_pills_html
+# Load .env from repo root so ANTHROPIC_API_KEY is available to all agents.
+from dotenv import load_dotenv
+
+load_dotenv(_REPO_ROOT / ".env", override=True)
+
+import streamlit as st
+from components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
+from components.pipeline_log import run_pipeline_with_log
+from components.room_picker import render_room_picker
+from components.variant_card import render_variant_card, score_badge, zone_pills_html
+
 from utils.logger import get_logger
+from llmops.guardrails import run_all_guardrails
 
 logger = get_logger(__name__)
 
@@ -36,12 +49,15 @@ GLOBAL_CSS = """
 [data-testid="stMain"],
 .main .block-container { background-color: #0D1117!important; color: #E6EDF3!important; }
 
+[data-testid="stHeader"] { background-color: #0D1117!important; }
+
 [data-testid="stSidebar"] > div:first-child {
     background-color: #161B22!important;
     border-right: 1px solid #30363D;
+    padding-top: 1rem!important;
 }
 
-.block-container { padding-top: 1.5rem!important; }
+.block-container { padding-top: 2.5rem!important; }
 
 [data-testid="stTabs"] button { color: #8B949E!important; border-bottom: 2px solid transparent; }
 [data-testid="stTabs"] button[aria-selected="true"] {
@@ -111,11 +127,11 @@ def _get(obj: object, key: str, default: Any = None) -> Any:
 # Startup — load output.json if present
 # ============================================================================
 
-if "result" not in st.session_state and Path("output.json").exists():
+if "result" not in st.session_state and Path("latest_run.json").exists():
     try:
-        st.session_state["result"] = json.loads(Path("output.json").read_text())
+        st.session_state["result"] = json.loads(Path("latest_run.json").read_text())
     except Exception as e:
-        logger.error("failed to load output.json: %s", e)
+        logger.error("failed to load latest_run.json: %s", e)
 
 # ============================================================================
 # Sidebar
@@ -138,8 +154,20 @@ with st.sidebar:
     must_have = st.multiselect(
         "Must include", ["Dishwasher", "Hood", "Island", "Oven", "Microwave"]
     )
-    avoid = st.multiselect("Avoid", ["Double sink", "Island", "Tall cabinets"])
-    generate = st.button("✨ Generate Layouts", type="primary", use_container_width=True)
+    avoid = st.multiselect(
+        "Avoid",
+        [
+            "Double sink",
+            "Island",
+            "Tall cabinets",
+            "Wall cabinets",
+            "Dishwasher",
+            "Hood",
+            "Base cabinet narrow",
+            "Open shelving",
+        ],
+    )
+    generate = st.button("✨ Generate Layouts", type="primary", width="stretch")
 
 if generate and input_json:
     input_json.setdefault("preferences", {})
@@ -150,6 +178,7 @@ if generate and input_json:
     result = run_pipeline_with_log(input_json)
     if result is not None:
         st.session_state["result"] = result
+        st.session_state["input_json"] = input_json
         st.rerun()
 
 # ============================================================================
@@ -211,7 +240,7 @@ with tab2:
 
                 img = f"renders/{v_id}_top.png"
                 if Path(img).exists():
-                    st.image(img, use_container_width=True)
+                    st.image(img, width="stretch")
 
                 st.markdown(zone_pills_html(layout), unsafe_allow_html=True)
 
@@ -234,7 +263,12 @@ with tab2:
 
                 rows: list[dict[str, Any]] = []
                 for name, item in layout.items():
-                    if item.get("is_wall") or item.get("is_floor"):
+                    if (
+                        item.get("is_wall")
+                        or item.get("is_floor")
+                        or item.get("is_door")
+                        or item.get("is_window")
+                    ):
                         continue
                     pos = item.get("position_mm", {})
                     rows.append(
@@ -248,7 +282,7 @@ with tab2:
                         }
                     )
                 if rows:
-                    st.dataframe(rows, use_container_width=True, hide_index=True)
+                    st.dataframe(rows, width="stretch", hide_index=True)
 
 # ============================================================================
 # Tab 3 — Catalog & MCP
@@ -288,7 +322,7 @@ with tab3:
     ]
     st.dataframe(
         [{"Tool": t, "Status": "✅ Ready", "Description": d} for t, d in MCP_TOOLS],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -400,4 +434,45 @@ with tab4:
                     "Items": int(_get(variant, "placement_count") or 0),
                 }
             )
-        st.dataframe(comparison_rows, use_container_width=True, hide_index=True)
+        st.dataframe(comparison_rows, width="stretch", hide_index=True)
+
+        st.divider()
+        with st.expander("🛡️ Guardrail Report", expanded=False):
+            _stored_input: dict[str, Any] | None = st.session_state.get("input_json")
+            _output_for_guard: dict[str, Any] | None = (
+                result if isinstance(result, dict) else None
+            )
+
+            _guard_results = run_all_guardrails(
+                input_json=_stored_input,
+                output_json=_output_for_guard,
+            )
+
+            _guard_labels: dict[str, str] = {
+                "input": "Input Guardrail",
+                "output": "Output Guardrail",
+            }
+
+            for _gkey, _glabel in _guard_labels.items():
+                _gr = _guard_results.get(_gkey)
+                if _gr is None:
+                    st.markdown(
+                        f'<span style="background:#30363D;color:#8B949E;padding:2px 10px;'
+                        f'border-radius:10px;font-size:0.8rem">⏭ {_glabel}: skipped</span>',
+                        unsafe_allow_html=True,
+                    )
+                    continue
+                _badge_bg = "#38A169" if _gr.passed else "#E53E3E"
+                _badge_icon = "✅" if _gr.passed else "❌"
+                _badge_text = "PASS" if _gr.passed else "FAIL"
+                st.markdown(
+                    f'<span style="background:{_badge_bg};color:#fff;padding:2px 10px;'
+                    f'border-radius:10px;font-size:0.8rem">'
+                    f"{_badge_icon} {_glabel}: {_badge_text}</span>",
+                    unsafe_allow_html=True,
+                )
+                for _viol in _gr.violations:
+                    if _viol.severity == "error":
+                        st.error(f"[{_viol.rule_id}] {_viol.message}")
+                    else:
+                        st.warning(f"[{_viol.rule_id}] {_viol.message}")

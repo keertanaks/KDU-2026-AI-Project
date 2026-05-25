@@ -1,7 +1,9 @@
 """Unit tests for SpatialEngine — pure math, no API calls."""
+
 from __future__ import annotations
 
 import pytest
+
 from tests.fixtures.sample_inputs import INPUT1, INPUT2, INPUT3
 
 
@@ -11,6 +13,7 @@ class TestSpatialEngineInput1:
     @pytest.fixture(autouse=True)
     def _setup(self):
         from pipeline.spatial_engine import SpatialEngine
+
         self.engine = SpatialEngine()
         self.result = self.engine.parse(INPUT1)
 
@@ -46,6 +49,7 @@ class TestSpatialEngineInput3:
     @pytest.fixture(autouse=True)
     def _setup(self):
         from pipeline.spatial_engine import SpatialEngine
+
         self.engine = SpatialEngine()
         self.result = self.engine.parse(INPUT3)
 
@@ -53,19 +57,26 @@ class TestSpatialEngineInput3:
         assert self.result.layout_capacity == "L"
 
     def test_north_wall_split_by_window(self):
-        # window: offset=1500, width=1200 → blocked [1500, 2700] for wall cabs
-        segs = self.result.free_segments["north_wall"]
+        # Windows block ONLY wall-level items. `wall_free_segments` is the
+        # restrictive map for uppers; `free_segments` (floor) is unaffected.
+        segs = self.result.wall_free_segments["north_wall"]
         assert len(segs) == 2
         assert segs[0].end_mm == pytest.approx(1500, abs=1)
         assert segs[1].start_mm == pytest.approx(2700, abs=1)
         assert segs[1].end_mm == pytest.approx(4200, abs=1)
+        # Floor-level segment remains unbroken under the window
+        floor = self.result.free_segments["north_wall"]
+        assert len(floor) == 1
+        assert floor[0].end_mm == pytest.approx(4200, abs=1)
 
     def test_east_wall_split_by_window(self):
-        # window: offset=600, width=800 → blocked [600, 1400]
-        segs = self.result.free_segments["east_wall"]
+        # Same split rule — uppers blocked, floor unaffected.
+        segs = self.result.wall_free_segments["east_wall"]
         assert len(segs) == 2
         assert segs[0].end_mm == pytest.approx(600, abs=1)
         assert segs[1].start_mm == pytest.approx(1400, abs=1)
+        floor = self.result.free_segments["east_wall"]
+        assert len(floor) == 1
 
     def test_three_exclusions(self):
         # door on south + 2 windows
@@ -83,11 +94,12 @@ class TestSpatialEngineInput3:
 
 
 class TestSpatialEngineInput2:
-    """42000×42000mm — large room."""
+    """4200×4200mm — U-capable room (3 cabinet walls)."""
 
     def test_large_room_layout_capacity(self):
         from pipeline.spatial_engine import SpatialEngine
+
         result = SpatialEngine().parse(INPUT2)
-        assert result.layout_capacity == "L"
+        assert result.layout_capacity == "U"
         segs = result.free_segments["north_wall"]
-        assert segs[0].end_mm == pytest.approx(42000, abs=1)
+        assert segs[0].end_mm == pytest.approx(4200, abs=1)

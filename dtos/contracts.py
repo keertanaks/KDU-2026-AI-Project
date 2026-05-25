@@ -72,6 +72,8 @@ class SKU:
     needs_water: bool
     needs_power: bool
     must_attach_to: str
+    placement: str = ""  # "built_in" | "counter_top" | "" (legacy)
+    color_set: str = ""  # e.g. "ivory_white", "sage_green" — empty for legacy SKUs
 
 
 @dataclass
@@ -111,13 +113,23 @@ class IntentDTO:
 
 @dataclass
 class SpatialEngineOutput:
-    """Result of Layer 1: Spatial facts extracted from input geometry."""
+    """Result of Layer 1: Spatial facts extracted from input geometry.
+
+    `free_segments` is for FLOOR-LEVEL items (base cabinets, sinks, appliances)
+    and subtracts doors + door swings. Windows do NOT block floor items —
+    a sink or base cabinet can sit below a window when the sill allows.
+
+    `wall_free_segments` is for WALL-LEVEL items (upper / wall cabinets) and
+    subtracts doors AND windows. Defaults to an empty dict for backward
+    compatibility; callers should fall back to `free_segments` when empty.
+    """
 
     walls: list[Wall]
     free_segments: dict[str, list[Segment]]
     flow_order: list[str]
     exclusions: list[Opening]
     layout_capacity: str
+    wall_free_segments: dict[str, list[Segment]] = field(default_factory=dict)
 
 
 @dataclass
@@ -133,12 +145,22 @@ class PreprocessingOutput:
 
 @dataclass
 class ZonePlannerOutput:
-    """Result of Layer 3: Zone strategies for one variant."""
+    """Result of Layer 3: Zone strategies for one variant.
+
+    Primary placement contract (used first by placement engine):
+        item_hints: {item_type → {wall, position}}
+            Example: {"fridge": {"wall": "north_wall", "position": "at north-west corner"}}
+
+    Fallback contracts (used if item_hints missing/invalid):
+        wall_strategies: {wall → [position terms]}  — positional matching, legacy
+        zone_assignments: {zone → wall}             — coarse routing
+    """
 
     variant_id: str
     family: str
     wall_strategies: dict[str, list[str]]
     zone_assignments: dict[str, str]
+    item_hints: dict[str, dict[str, str]] = field(default_factory=dict)
     work_triangle_priority: bool = True
     adjacency_hints: list[str] = field(default_factory=list)
     avoid_zones: list[str] = field(default_factory=list)
@@ -170,6 +192,8 @@ class VariantSummaryDTO:
     rationale: list[dict[str, Any]]
     layout: dict[str, Any]
     environment: dict[str, Any]
+    collision_pairs: list[dict[str, Any]] = field(default_factory=list)
+    score_debug: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

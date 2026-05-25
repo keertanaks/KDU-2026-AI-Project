@@ -82,7 +82,10 @@ class SpatialEngine:
         """
         walls = self._parse_walls(input_json["environment"]["wall"])
         exclusions = self._parse_openings(input_json["environment"].get("openings", []))
-        free_segments = self._compute_free_segments(walls, exclusions)
+        # Floor-level free segments: subtract doors + swings only (windows allowed).
+        free_segments = self._compute_free_segments(walls, exclusions, include_windows=False)
+        # Wall-level free segments: subtract doors AND windows (uppers must clear glass).
+        wall_free_segments = self._compute_free_segments(walls, exclusions, include_windows=True)
         flow_order = self._compute_flow_order(walls)
         layout_capacity = self._determine_layout_capacity(walls)
 
@@ -99,6 +102,7 @@ class SpatialEngine:
             flow_order=flow_order,
             exclusions=exclusions,
             layout_capacity=layout_capacity,
+            wall_free_segments=wall_free_segments,
         )
 
     def _parse_walls(self, wall_list: list[dict[str, Any]]) -> list[Wall]:
@@ -162,14 +166,26 @@ class SpatialEngine:
         return exclusions
 
     def _compute_free_segments(
-        self, walls: list[Wall], exclusions: list[Opening]
+        self,
+        walls: list[Wall],
+        exclusions: list[Opening],
+        *,
+        include_windows: bool = True,
     ) -> dict[str, list[Segment]]:
-        """Compute free segments for each wall by subtracting blocked ranges."""
+        """Compute free segments per wall.
+
+        Args:
+            include_windows: If False, windows are NOT subtracted (floor-level).
+                             If True, windows ARE subtracted (wall-level).
+        """
         free_segments: dict[str, list[Segment]] = {}
 
         for wall in walls:
             # Find all openings that block this wall
-            wall_openings = [e for e in exclusions if e.wall == wall.anchor]
+            relevant = (
+                exclusions if include_windows else [e for e in exclusions if e.kind != "window"]
+            )
+            wall_openings = [e for e in relevant if e.wall == wall.anchor]
             blocked_ranges = [(e.blocked_start_mm, e.blocked_end_mm) for e in wall_openings]
 
             # Subtract blocked from full wall length

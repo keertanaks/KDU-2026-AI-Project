@@ -1,4 +1,5 @@
 """Centralised logging setup. Import get_logger in every module."""
+
 from __future__ import annotations
 
 import logging

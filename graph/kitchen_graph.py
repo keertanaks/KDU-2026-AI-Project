@@ -23,6 +23,7 @@ from pipeline.spatial_engine import SpatialEngine
 from pipeline.zone_planner import ZonePlanner
 from utils.logger import get_logger
 from utils.model_selector import should_use_opus
+from utils.openrouter_compat import OpenRouterCompat
 
 logger = get_logger(__name__)
 
@@ -32,8 +33,8 @@ class KitchenGraph:
 
     def __init__(
         self,
-        client: anthropic.Anthropic,
-        output_path: str = "output.json",
+        client: anthropic.Anthropic | OpenRouterCompat,
+        output_path: str = "latest_run.json",
     ) -> None:
         """Initialise all pipeline layers and compile the graph."""
         self._spatial = SpatialEngine()
@@ -138,13 +139,44 @@ class KitchenGraph:
         return {"placed_variants": placed}
 
     def _node_validation(self, state: KitchenGraphState) -> dict[str, Any]:
-        """NKBA validation and retry-context update."""
+        """NKBA validation and retry-context update.
+
+        On retry pass, compare each retry variant against the original first-pass
+        validated variant of the same id and keep the higher-scoring one. This
+        prevents a worse retry from replacing a better original.
+        """
         is_retry_pass = bool(state["retry_context"])
 
         validated: list[VariantSummaryDTO] = [
             self._validator.validate(p, state["spatial_output"], state["preprocessing_output"])
             for p in state["placed_variants"]
         ]
+
+        if is_retry_pass:
+            previous = {v.id: v for v in state["validated_variants"]}
+            merged: list[VariantSummaryDTO] = []
+            for retry_v in validated:
+                orig = previous.get(retry_v.id)
+                if orig is None:
+                    merged.append(retry_v)
+                    continue
+                if retry_v.score > orig.score:
+                    logger.info(
+                        "RETRY-USED-IMPROVED: %s retry %.3f > original %.3f",
+                        retry_v.id,
+                        retry_v.score,
+                        orig.score,
+                    )
+                    merged.append(retry_v)
+                else:
+                    logger.info(
+                        "RETRY-KEPT-ORIGINAL: %s original %.3f >= retry %.3f",
+                        retry_v.id,
+                        orig.score,
+                        retry_v.score,
+                    )
+                    merged.append(orig)
+            validated = merged
 
         new_retry: dict[str, list[str]] = {}
         if not is_retry_pass:

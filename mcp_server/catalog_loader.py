@@ -29,6 +29,26 @@ PRICE_ALIASES = {
     "luxury": "high",
 }
 
+# When catalog.json category="cabinet", use the item type prefix to find the real category.
+# Ordered from most-specific to least-specific prefix.
+TYPE_TO_CATEGORY_PREFIX: list[tuple[str, str]] = [
+    ("base_cabinet", "base_cabinet"),
+    ("base_double_door", "base_cabinet"),
+    ("base_single_door", "base_cabinet"),
+    ("base_corner", "base_cabinet"),
+    ("base_drawer", "base_cabinet"),
+    ("base_blind_corner", "base_cabinet"),
+    ("corner_cabinet", "base_cabinet"),
+    ("wall_cabinet", "wall_cabinet"),
+    ("wall_single_door", "wall_cabinet"),
+    ("wall_double_door", "wall_cabinet"),
+    ("wall_glass_cabinet", "wall_cabinet"),
+    ("wall_open_shelf", "wall_cabinet"),
+    ("wall_corner", "wall_cabinet"),
+    ("tall_cabinet", "tall_cabinet"),
+    ("island", "island"),
+]
+
 # Required fields that every SKU must have
 REQUIRED_FIELDS = {
     "sku_id",
@@ -112,10 +132,20 @@ def load_catalog(catalog_id: str = "catalog", base_dir: str = ".") -> dict[str, 
         if not isinstance(constraints, dict):
             constraints = {}
 
+        raw_category = item.get("category", "")
+        item_type = item.get("type", "")
+        if raw_category.lower().strip() == "cabinet":
+            specific_cat = next(
+                (cat for prefix, cat in TYPE_TO_CATEGORY_PREFIX if item_type.startswith(prefix)),
+                "cabinet",
+            )
+        else:
+            specific_cat = _normalize_category(raw_category)
+
         normalized_sku: dict[str, Any] = {
             "sku_id": sku_id,
             "name": item.get("type", sku_id),
-            "category": _normalize_category(item.get("category", "")),
+            "category": specific_cat,
             "width_mm": float(item.get("width_mm", 0)),
             "depth_mm": float(item.get("depth_mm", 0)),
             "height_mm": float(item.get("height_mm", 0)),
@@ -126,6 +156,9 @@ def load_catalog(catalog_id: str = "catalog", base_dir: str = ".") -> dict[str, 
             "needs_water": bool(constraints.get("needs_water", False)),
             "needs_power": bool(constraints.get("needs_power", False)),
             "must_attach_to": item.get("must_attach_to", ""),
+            # Optional fields from expanded catalog (default to "" for legacy SKUs)
+            "placement": item.get("placement", ""),
+            "color_set": item.get("color_set", ""),
         }
 
         # Validate all required fields present
@@ -149,3 +182,9 @@ def get_catalog(catalog_id: str = "catalog", base_dir: str = ".") -> dict[str, d
     if _CATALOG is None:
         _CATALOG = load_catalog(catalog_id, base_dir)
     return _CATALOG
+
+
+def reset_catalog_cache() -> None:
+    """Invalidate the cached catalog so the next get_catalog() reloads from disk."""
+    global _CATALOG
+    _CATALOG = None

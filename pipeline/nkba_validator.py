@@ -17,6 +17,7 @@ from dtos.contracts import (
     VariantSummaryDTO,
 )
 from utils.logger import get_logger
+from utils.rationale_lookup import generate_rationale
 
 logger = get_logger(__name__)
 
@@ -48,6 +49,40 @@ DOOR_WIDTH_MIN_MM: float = 813.0
 AISLE_1COOK_MM: float = 1067.0
 AISLE_2COOK_MM: float = 1219.0
 WALKWAY_MM: float = 914.0
+LAYOUT04_ADJ_MM: float = 1200.0  # base_cabinet adjacency threshold for LAYOUT-04
+Z_LEVEL_SPLIT_MM: float = 500.0  # items below this z are floor-level, above are wall-level
+
+# Keywords for items that are self-supporting floor-level run units.
+# These count toward the continuous run (LAYOUT-03) and do not trigger
+# LAYOUT-04 adjacency failures (they are their own base-level support).
+_FLOOR_RUN_KW: tuple[str, ...] = (
+    "base_cabinet",
+    "corner_cabinet",
+    "sink",
+    "dishwasher",
+    "stove",
+    "range",
+    "cooktop",
+    "fridge",
+    "refrigerator",
+    "tall_cabinet",
+)
+# Truly standalone floor-level appliances — self-supporting, no adjacent base cabinet
+# required. Sink is intentionally excluded: it is an integrated sink-base fixture
+# whose LAYOUT-04 compliance is checked separately (integrated + adjacent run unit).
+_STANDALONE_APPLIANCE_KW: tuple[str, ...] = (
+    "dishwasher",
+    "stove",
+    "range",
+    "cooktop",
+    "fridge",
+    "refrigerator",
+)
+
+# Sink-as-integrated-base-fixture: valid height range (mm) matching base cabinet height.
+# SKU-S01/SKU-S02 are modeled at 900mm — check within ±100mm.
+_SINK_BASE_HEIGHT_MIN_MM: float = 800.0
+_SINK_BASE_HEIGHT_MAX_MM: float = 1000.0
 
 RULE_WEIGHTS: dict[str, float] = {
     "WORKFLOW-03": 0.15,
@@ -62,6 +97,21 @@ RULE_WEIGHTS: dict[str, float] = {
     "LAYOUT-05": 0.07,
     "LAYOUT-06": 0.06,
 }
+
+# Spillover log entries that are purely informational — do NOT count against score.
+_INFORMATIONAL_LOG_PREFIXES: tuple[str, ...] = (
+    "END-FILLER:",
+    "SINK-BASE-IMPLIED:",
+    "TYPOLOGY-PROTECT:",
+    "RETRY-KEPT-",
+    "COLOCATE:",
+    "VARIANT-COLLAPSED",
+)
+
+# Score caps applied after the raw formula.
+_SCORE_CAP_ANY_VIOLATION: float = 0.95  # any rule violated
+_SCORE_CAP_COLLISION: float = 0.80  # real floor-level overlap
+_SCORE_CAP_LAYOUT_RUN: float = 0.88  # LAYOUT-03 or LAYOUT-04
 
 
 # ============================================================================
@@ -84,9 +134,9 @@ class NKBAValidator:
         # ── 11 Project rules (weighted) ──────────────────────────────────
         self._check_nkba_cl_01(placed, spatial, violations)
         self._check_nkba_cl_02(placed, spatial, violations)
-        self._check_workflow_01(placed, violations)
+        self._check_workflow_01(placed, spatial, violations)
         self._check_workflow_02(placed, violations)
-        self._check_workflow_03(placed, violations)
+        self._check_workflow_03(placed, spatial, violations)
         self._check_layout_01(placed, spatial, violations)
         self._check_layout_02(placed, violations)
         self._check_layout_03(placed, spatial, violations)
@@ -97,17 +147,17 @@ class NKBAValidator:
         # ── 20 Official NKBA rules (unweighted, count only) ──────────────
         self._check_nkba_01(spatial, violations)
         self._check_nkba_02(placed, violations)
-        self._check_nkba_03(placed, violations)
+        self._check_nkba_03(placed, spatial, violations)
         self._check_nkba_04(placed, violations)
         self._check_nkba_05(violations)
         self._check_nkba_06(placed, spatial, violations)
         self._check_nkba_06b(placed, spatial, violations)
         self._check_nkba_07(placed, spatial, violations)
         self._check_nkba_08(violations)
-        self._check_nkba_10(placed, violations)
+        self._check_nkba_10(placed, spatial, violations)
         self._check_nkba_11(placed, spatial, violations)
         self._check_nkba_12(placed, spatial, violations)
-        self._check_nkba_13(placed, violations)
+        self._check_nkba_13(placed, spatial, violations)
         self._check_nkba_la_01(placed, spatial, violations)
         self._check_nkba_la_02(placed, spatial, violations)
         self._check_nkba_la_03(placed, spatial, violations)
@@ -121,33 +171,93 @@ class NKBAValidator:
         passed_rules = total_rules - len(violated_ids)
         nkba_pct = passed_rules / total_rules
 
-        adjacency_violations = len(placed.collision_flags)
-        spillover_count = len(placed.spillover_log)
+        # Hard spillover only — informational entries do not penalise score.
+        hard_spillover_count = sum(
+            1
+            for entry in placed.spillover_log
+            if not any(entry.startswith(p) for p in _INFORMATIONAL_LOG_PREFIXES)
+        )
+
+        # Validator-side floor-level collision detection (structured, with bbox).
+        collision_pairs = self._detect_floor_collisions(placed)
+        collision_count = len(collision_pairs)
+
         weight_penalty = sum(RULE_WEIGHTS.get(rid, 0.0) for rid in violated_ids)
 
-        score = (
+        raw_score = (
             1.0
             + nkba_pct * 0.30
-            - spillover_count * 0.05
-            - adjacency_violations * 0.05
+            - hard_spillover_count * 0.05
+            - collision_count * 0.10
             - weight_penalty
         )
+
+        # Apply severity caps — order matters; take the tightest applicable cap.
+        caps_applied: list[str] = []
+        score = raw_score
+        if violated_ids:
+            if score > _SCORE_CAP_ANY_VIOLATION:
+                score = _SCORE_CAP_ANY_VIOLATION
+                caps_applied.append("any_violation->0.95")
+        if "LAYOUT-03" in violated_ids or "LAYOUT-04" in violated_ids:
+            if score > _SCORE_CAP_LAYOUT_RUN:
+                score = _SCORE_CAP_LAYOUT_RUN
+                caps_applied.append("layout_run->0.88")
+        if collision_count > 0:
+            if score > _SCORE_CAP_COLLISION:
+                score = _SCORE_CAP_COLLISION
+                caps_applied.append("collision->0.80")
+
+        score = max(0.0, min(1.0, score))
+
+        score_debug: dict[str, Any] = {
+            "raw_score": round(raw_score, 3),
+            "nkba_pct": round(nkba_pct, 3),
+            "hard_spillover_count": hard_spillover_count,
+            "collision_count": collision_count,
+            "weight_penalty": round(weight_penalty, 3),
+            "caps_applied": caps_applied,
+            "final_score": round(score, 3),
+            "hard_violation_ids": sorted(violated_ids & set(RULE_WEIGHTS)),
+            "soft_violation_ids": sorted(violated_ids - set(RULE_WEIGHTS)),
+        }
 
         warnings = list(placed.collision_flags)
         if any("CONSTRAINT_VIOLATION" in s for s in placed.spillover_log):
             warnings.append("One or more items forced to corner — check LAYOUT-06")
 
-        layout = self._serialize_layout(placed)
+        layout = self._serialize_layout(placed, spatial)
+
+        # Auto-generate rationale from violations using rule explanation lookup table
+        rationale = generate_rationale(violations)
 
         logger.info(
-            "Variant '%s': score=%.3f passed=%d/%d spillover=%d collisions=%d",
+            "Variant '%s': score=%.3f passed=%d/%d hard_spill=%d collisions=%d weight=%.2f caps=%s",
             placed.variant_id,
             score,
             passed_rules,
             total_rules,
-            spillover_count,
-            adjacency_violations,
+            hard_spillover_count,
+            collision_count,
+            weight_penalty,
+            caps_applied or "none",
         )
+        if collision_pairs:
+            for cp in collision_pairs:
+                logger.warning(
+                    "COLLISION-PAIR: %s(%s) x=[%.0f,%.0f] <-> %s(%s) x=[%.0f,%.0f] "
+                    "overlap=%.0fmm wall=%s",
+                    cp["id_a"],
+                    cp["type_a"],
+                    cp["bbox_a"]["x1"],
+                    cp["bbox_a"]["x2"],
+                    cp["id_b"],
+                    cp["type_b"],
+                    cp["bbox_b"]["x1"],
+                    cp["bbox_b"]["x2"],
+                    cp["overlap_mm"],
+                    cp["wall"],
+                )
 
         return VariantSummaryDTO(
             id=placed.variant_id,
@@ -155,12 +265,14 @@ class NKBAValidator:
             score=score,
             placement_count=len(placed.positioned_items),
             nkba_compliance_pct=nkba_pct,
-            spillover_count=spillover_count,
+            spillover_count=len(placed.spillover_log),
             warnings=warnings,
             violations=violations,
-            rationale=[],
+            rationale=rationale,
             layout=layout,
             environment={},
+            collision_pairs=collision_pairs,
+            score_debug=score_debug,
         )
 
     # ================================================================== #
@@ -173,12 +285,12 @@ class NKBAValidator:
         spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
-        """NKBA-CL-01: Fridge needs >= 1067mm clear space in front."""
+        """NKBA-CL-01: Fridge needs >= 1067mm clear aisle in front."""
         fridge = self._find("fridge", placed) or self._find("refrigerator", placed)
         if fridge is None:
             return
-        room_depth = self._room_depth(spatial)
-        clearance = room_depth - fridge.position_mm["y"] - fridge.dimensions_mm["depth"]
+        # Use aisle estimate: room depth minus total counter depth (same as NKBA-06/07)
+        clearance = self._min_aisle(placed, spatial)
         if clearance < FRIDGE_CLEARANCE_MM:
             violations.append(
                 {
@@ -211,6 +323,7 @@ class NKBAValidator:
     def _check_workflow_01(
         self,
         placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
         """WORKFLOW-01: Sink and dishwasher centres <= 600mm apart."""
@@ -218,7 +331,11 @@ class NKBAValidator:
         dw = self._find("dishwasher", placed)
         if sink is None or dw is None:
             return
-        dist = abs(self._centre_x(sink) - self._centre_x(dw))
+        if sink.anchor_wall == dw.anchor_wall:
+            dist = abs(self._centre_x(sink) - self._centre_x(dw))
+        else:
+            # Cross-wall: use global 2D distance
+            dist = self._dist2d_global(sink, dw, spatial)
         if dist > DW_SINK_MAX_MM:
             violations.append(
                 {
@@ -255,6 +372,7 @@ class NKBAValidator:
     def _check_workflow_03(
         self,
         placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
         """WORKFLOW-03: Work triangle perimeter 3962-6600mm."""
@@ -264,7 +382,9 @@ class NKBAValidator:
         if not (sink and fridge and stove):
             return
         perimeter = (
-            self._dist2d(sink, fridge) + self._dist2d(fridge, stove) + self._dist2d(stove, sink)
+            self._dist2d_global(sink, fridge, spatial)
+            + self._dist2d_global(fridge, stove, spatial)
+            + self._dist2d_global(stove, sink, spatial)
         )
         if perimeter < WORK_TRI_MIN_MM or perimeter > WORK_TRI_MAX_MM:
             violations.append(
@@ -287,8 +407,11 @@ class NKBAValidator:
         sink = self._find("sink", placed)
         if sink is None:
             return
+        # Openings use anchor direction ("north"); PlacedItem uses wall name ("north_wall")
+        sink_wall_obj = self._get_wall(sink.anchor_wall, spatial)
+        sink_anchor = sink_wall_obj.anchor.lower() if sink_wall_obj else sink.anchor_wall
         windows_on_wall = [
-            o for o in spatial.exclusions if o.kind == "window" and o.wall == sink.anchor_wall
+            o for o in spatial.exclusions if o.kind == "window" and o.wall == sink_anchor
         ]
         if not windows_on_wall:
             return
@@ -338,16 +461,40 @@ class NKBAValidator:
         spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
-        """LAYOUT-03: Continuous run — gaps <= 50mm except at door/window openings."""
+        """LAYOUT-03: Continuous run — gaps <= 50mm except at door/window openings or END-FILLER.
+
+        Counts ALL floor-level run units (appliances, sinks, base/tall cabinets) as
+        part of the continuous run — not just base cabinets.
+        An END-FILLER spillover entry on a wall marks an intentionally unfillable gap
+        (no cabinet exists that fits) and excuses that wall from the rule.
+        """
         opening_ranges: dict[str, list[tuple[float, float]]] = {}
         for o in spatial.exclusions:
             opening_ranges.setdefault(o.wall, []).append((o.blocked_start_mm, o.blocked_end_mm))
 
+        # Walls where gap-fill logged an intentionally unfillable gap
+        end_filler_walls: set[str] = set()
+        for entry in placed.spillover_log:
+            if entry.startswith("END-FILLER:") and " on " in entry:
+                try:
+                    wall_part = entry.split(" on ")[1].split(" (")[0].strip()
+                    end_filler_walls.add(wall_part)
+                except IndexError:
+                    pass
+
         for wall in spatial.walls:
             if not wall.has_cabinets:
                 continue
-            items = self._items_on_wall(wall.name, placed)
+            # All floor-level run units count toward the continuous run
+            items = [
+                it
+                for it in self._items_on_wall(wall.name, placed)
+                if it.position_mm["z"] < 500 and self._is_floor_run_unit(it)
+            ]
             if len(items) < 2:
+                continue
+            # END-FILLER logged for this wall → at least one gap is intentionally open
+            if wall.name in end_filler_walls:
                 continue
             ops = opening_ranges.get(wall.name, [])
             for i in range(len(items) - 1):
@@ -374,39 +521,37 @@ class NKBAValidator:
         placed: PlacementEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
-        """LAYOUT-04: Every appliance/sink has a base_cabinet overlapping its x-range."""
-        appliances = [
-            item
-            for item in placed.positioned_items.values()
-            if any(
-                kw in item.category.lower() or kw in item.name.lower()
-                for kw in ("sink", "stove", "range", "refrigerator", "fridge", "dishwasher")
+        """LAYOUT-04: Verify sink-base support and flag isolation.
+
+        Dishwasher, stove/range/cooktop, and fridge are fully standalone floor-level
+        units — no adjacency requirement.
+
+        Sink is an integrated sink-base fixture (SKU-S01/S02: height≈900mm,
+        wall-attached).  It passes LAYOUT-04 (SINK-BASE-IMPLIED) when:
+          (a) its height is within base-cabinet range, AND
+          (b) at least one other floor-level run unit is within CONTINUOUS_GAP_MM
+              on the same wall (i.e. it participates in the continuous run).
+        If the sink is isolated — no adjacent run unit — the rule fires.
+        """
+        for item in placed.positioned_items.values():
+            combined = (item.category + " " + item.name).lower()
+            if "sink" not in combined:
+                continue
+            # Integrated sink-base fixture check
+            if self._sink_is_integrated_base_fixture(item):
+                if self._sink_has_adjacent_run_unit(item, placed):
+                    continue  # SINK-BASE-IMPLIED: passes LAYOUT-04
+            # Sink is either non-integrated height or isolated from the run
+            violations.append(
+                {
+                    "rule_id": "LAYOUT-04",
+                    "text": (
+                        f"'{item.name}' sink is isolated from floor-level run "
+                        f"(no adjacent run unit within {CONTINUOUS_GAP_MM:.0f}mm) "
+                        f"on wall '{item.anchor_wall}'"
+                    ),
+                }
             )
-        ]
-        base_cabs = [
-            item
-            for item in placed.positioned_items.values()
-            if "base_cabinet" in item.category.lower()
-        ]
-        for appl in appliances:
-            ax1 = appl.position_mm["x"]
-            ax2 = ax1 + appl.dimensions_mm["width"]
-            covered = any(
-                bc.anchor_wall == appl.anchor_wall
-                and bc.position_mm["x"] < ax2
-                and bc.position_mm["x"] + bc.dimensions_mm["width"] > ax1
-                for bc in base_cabs
-            )
-            if not covered:
-                violations.append(
-                    {
-                        "rule_id": "LAYOUT-04",
-                        "text": (
-                            f"'{appl.name}' has no base_cabinet coverage"
-                            f" on wall '{appl.anchor_wall}'"
-                        ),
-                    }
-                )
 
     def _check_layout_05(
         self,
@@ -418,7 +563,9 @@ class NKBAValidator:
         for wall in spatial.walls:
             if not wall.has_cabinets:
                 continue
-            items = self._items_on_wall(wall.name, placed)
+            items = [
+                it for it in self._items_on_wall(wall.name, placed) if it.position_mm["z"] < 500
+            ]
             if not items:
                 continue
             for item in (items[0], items[-1]):
@@ -505,6 +652,13 @@ class NKBAValidator:
                 a, b = appliances[i], appliances[j]
                 if a.anchor_wall != b.anchor_wall:
                     continue
+                # Hood is intentionally above stove — skip this pair
+                a_tag = (a.category + " " + a.name).lower()
+                b_tag = (b.category + " " + b.name).lower()
+                if ("hood" in a_tag and ("stove" in b_tag or "range" in b_tag)) or (
+                    "hood" in b_tag and ("stove" in a_tag or "range" in a_tag)
+                ):
+                    continue
                 # Front clearance zone: extends from item y forward
                 a_front_end = a.position_mm["y"] + a.dimensions_mm["depth"]
                 b_front_end = b.position_mm["y"] + b.dimensions_mm["depth"]
@@ -524,6 +678,7 @@ class NKBAValidator:
     def _check_nkba_03(
         self,
         placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
         """NKBA-03: Work triangle perimeter <= 7925mm."""
@@ -533,7 +688,9 @@ class NKBAValidator:
         if not (sink and fridge and stove):
             return
         perimeter = (
-            self._dist2d(sink, fridge) + self._dist2d(fridge, stove) + self._dist2d(stove, sink)
+            self._dist2d_global(sink, fridge, spatial)
+            + self._dist2d_global(fridge, stove, spatial)
+            + self._dist2d_global(stove, sink, spatial)
         )
         if perimeter > WORK_TRI_NKBA03_MAX_MM:
             violations.append(
@@ -632,28 +789,23 @@ class NKBAValidator:
     def _check_nkba_10(
         self,
         placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
-        """NKBA-10: Sink on same wall as stove or fridge (within 1500mm)."""
+        """NKBA-10: Sink within 1500mm of stove or fridge (global 2D distance)."""
         sink = self._find("sink", placed)
         if sink is None:
             return
         stove = self._find("stove", placed) or self._find("range", placed)
         fridge = self._find("fridge", placed) or self._find("refrigerator", placed)
         threshold = 1500.0
-        near_stove = stove is not None and (
-            sink.anchor_wall == stove.anchor_wall
-            and abs(self._centre_x(sink) - self._centre_x(stove)) <= threshold
-        )
-        near_fridge = fridge is not None and (
-            sink.anchor_wall == fridge.anchor_wall
-            and abs(self._centre_x(sink) - self._centre_x(fridge)) <= threshold
-        )
+        near_stove = stove is not None and self._dist2d_global(sink, stove, spatial) <= threshold
+        near_fridge = fridge is not None and self._dist2d_global(sink, fridge, spatial) <= threshold
         if not (near_stove or near_fridge):
             violations.append(
                 {
                     "rule_id": "NKBA-10",
-                    "text": "Sink not within 1500mm of stove or fridge on same wall",
+                    "text": "Sink not within 1500mm of stove or fridge",
                 }
             )
 
@@ -669,8 +821,8 @@ class NKBAValidator:
             return
         wall = self._get_wall(sink.anchor_wall, spatial)
         wall_len = wall.length_mm if wall else 99999.0
-        left = self._gap_left(sink, sink.anchor_wall, placed)
-        right = self._gap_right(sink, sink.anchor_wall, placed, wall_len)
+        left = self._landing_left(sink, sink.anchor_wall, placed)
+        right = self._landing_right(sink, sink.anchor_wall, placed, wall_len)
         long_side = max(left, right)
         short_side = min(left, right)
         if long_side < SINK_LAND_LONG_MM or short_side < SINK_LAND_SHORT_MM:
@@ -696,8 +848,8 @@ class NKBAValidator:
             return
         wall = self._get_wall(sink.anchor_wall, spatial)
         wall_len = wall.length_mm if wall else 99999.0
-        left = self._gap_left(sink, sink.anchor_wall, placed)
-        right = self._gap_right(sink, sink.anchor_wall, placed, wall_len)
+        left = self._landing_left(sink, sink.anchor_wall, placed)
+        right = self._landing_right(sink, sink.anchor_wall, placed, wall_len)
         if max(left, right) < PREP_AREA_MM:
             violations.append(
                 {
@@ -711,6 +863,7 @@ class NKBAValidator:
     def _check_nkba_13(
         self,
         placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
         violations: list[dict[str, Any]],
     ) -> None:
         """NKBA-13: DW within 914mm of sink AND >= 533mm beside DW."""
@@ -718,7 +871,10 @@ class NKBAValidator:
         sink = self._find("sink", placed)
         if dw is None or sink is None:
             return
-        dist = abs(self._centre_x(dw) - self._centre_x(sink))
+        if dw.anchor_wall == sink.anchor_wall:
+            dist = abs(self._centre_x(dw) - self._centre_x(sink))
+        else:
+            dist = self._dist2d_global(dw, sink, spatial)
         if dist > DW_SINK_NKBA13_MM:
             violations.append(
                 {
@@ -763,8 +919,8 @@ class NKBAValidator:
             return
         wall = self._get_wall(fridge.anchor_wall, spatial)
         wall_len = wall.length_mm if wall else 99999.0
-        left = self._gap_left(fridge, fridge.anchor_wall, placed)
-        right = self._gap_right(fridge, fridge.anchor_wall, placed, wall_len)
+        left = self._landing_left(fridge, fridge.anchor_wall, placed)
+        right = self._landing_right(fridge, fridge.anchor_wall, placed, wall_len)
         if max(left, right) < FRIDGE_LAND_MM:
             violations.append(
                 {
@@ -788,8 +944,8 @@ class NKBAValidator:
             return
         wall = self._get_wall(stove.anchor_wall, spatial)
         wall_len = wall.length_mm if wall else 99999.0
-        left = self._gap_left(stove, stove.anchor_wall, placed)
-        right = self._gap_right(stove, stove.anchor_wall, placed, wall_len)
+        left = self._landing_left(stove, stove.anchor_wall, placed)
+        right = self._landing_right(stove, stove.anchor_wall, placed, wall_len)
         short = min(left, right)
         long_ = max(left, right)
         if short < STOVE_LAND_SHORT_MM or long_ < STOVE_LAND_LONG_MM:
@@ -815,8 +971,8 @@ class NKBAValidator:
             return
         wall = self._get_wall(stove.anchor_wall, spatial)
         wall_len = wall.length_mm if wall else 99999.0
-        left = self._gap_left(stove, stove.anchor_wall, placed)
-        right = self._gap_right(stove, stove.anchor_wall, placed, wall_len)
+        left = self._landing_left(stove, stove.anchor_wall, placed)
+        right = self._landing_right(stove, stove.anchor_wall, placed, wall_len)
         if max(left, right) < STOVE_LAND_LONG_MM:
             violations.append(
                 {
@@ -905,6 +1061,135 @@ class NKBAValidator:
     # Helpers                                                              #
     # ================================================================== #
 
+    def _detect_floor_collisions(
+        self,
+        placed: PlacementEngineOutput,
+    ) -> list[dict[str, Any]]:
+        """Detect real floor-level x-range overlaps between items on the same wall.
+
+        Only checks items at z < Z_LEVEL_SPLIT_MM (floor level).
+        All floor items on the same wall share the same y-plane (wall thickness),
+        so an x-range overlap is a genuine footprint collision.
+
+        Whitelist semantics:
+          - tap/sink: always exempt (tap co-locates on sink unit).
+          - hood/stove: exempt only when Z ranges do not overlap (normal case).
+          - wall_cabinet/base_cabinet: exempt only when Z ranges do not overlap.
+          - dishwasher/base_cabinet: NOT exempt — real overlap must be reported.
+        """
+        pairs: list[dict[str, Any]] = []
+        floor_items = [
+            (sid, item)
+            for sid, item in placed.positioned_items.items()
+            if item.position_mm.get("z", 0.0) < Z_LEVEL_SPLIT_MM
+        ]
+        for i in range(len(floor_items)):
+            sid_a, a = floor_items[i]
+            for j in range(i + 1, len(floor_items)):
+                sid_b, b = floor_items[j]
+                if a.anchor_wall != b.anchor_wall:
+                    continue
+                tag_a = (a.category + " " + a.name).lower()
+                tag_b = (b.category + " " + b.name).lower()
+                # Tap/sink: always whitelisted
+                if ("tap" in tag_a and "sink" in tag_b) or ("tap" in tag_b and "sink" in tag_a):
+                    continue
+                # Hood/stove: exempt only when Z ranges are separated
+                if ("hood" in tag_a and ("stove" in tag_b or "range" in tag_b)) or (
+                    "hood" in tag_b and ("stove" in tag_a or "range" in tag_a)
+                ):
+                    az1, az2 = a.position_mm["z"], a.position_mm["z"] + a.dimensions_mm["height"]
+                    bz1, bz2 = b.position_mm["z"], b.position_mm["z"] + b.dimensions_mm["height"]
+                    if az2 <= bz1 or bz2 <= az1:
+                        continue  # Z ranges do not overlap — not a real collision
+                # Wall_cabinet/base_cabinet: exempt only when Z ranges are separated
+                if ("wall_cabinet" in tag_a and "base_cabinet" in tag_b) or (
+                    "wall_cabinet" in tag_b and "base_cabinet" in tag_a
+                ):
+                    az1, az2 = a.position_mm["z"], a.position_mm["z"] + a.dimensions_mm["height"]
+                    bz1, bz2 = b.position_mm["z"], b.position_mm["z"] + b.dimensions_mm["height"]
+                    if az2 <= bz1 or bz2 <= az1:
+                        continue
+                ax1 = a.position_mm["x"]
+                ax2 = ax1 + a.dimensions_mm["width"]
+                bx1 = b.position_mm["x"]
+                bx2 = bx1 + b.dimensions_mm["width"]
+                if ax2 <= bx1 or bx2 <= ax1:
+                    continue  # no x overlap
+                overlap = min(ax2, bx2) - max(ax1, bx1)
+                pairs.append(
+                    {
+                        "id_a": sid_a,
+                        "type_a": a.category,
+                        "id_b": sid_b,
+                        "type_b": b.category,
+                        "bbox_a": {
+                            "x1": round(ax1),
+                            "x2": round(ax2),
+                            "z": round(a.position_mm["z"]),
+                        },
+                        "bbox_b": {
+                            "x1": round(bx1),
+                            "x2": round(bx2),
+                            "z": round(b.position_mm["z"]),
+                        },
+                        "wall": a.anchor_wall,
+                        "overlap_mm": round(overlap),
+                    }
+                )
+        return pairs
+
+    @staticmethod
+    def _is_floor_run_unit(item: PlacedItem) -> bool:
+        """True if item occupies floor-level run space and is self-supporting."""
+        combined = (item.category + " " + item.name).lower()
+        return any(kw in combined for kw in _FLOOR_RUN_KW)
+
+    @staticmethod
+    def _is_standalone_appliance(item: PlacedItem) -> bool:
+        """True if item is a standalone appliance that does not need adjacent base cabinet."""
+        combined = (item.category + " " + item.name).lower()
+        return any(kw in combined for kw in _STANDALONE_APPLIANCE_KW)
+
+    @staticmethod
+    def _sink_is_integrated_base_fixture(sink: PlacedItem) -> bool:
+        """True if the sink's physical dimensions match an integrated sink-base fixture.
+
+        SKU-S01/SKU-S02 are modeled at base-cabinet height (900mm) so they act as
+        their own base-level unit without needing a separate support cabinet.
+        A sink whose height is far from base cabinet height is not integrated.
+        """
+        h = sink.dimensions_mm.get("height", 0.0)
+        return _SINK_BASE_HEIGHT_MIN_MM <= h <= _SINK_BASE_HEIGHT_MAX_MM
+
+    def _sink_has_adjacent_run_unit(
+        self,
+        sink: PlacedItem,
+        placed: PlacementEngineOutput,
+    ) -> bool:
+        """True if at least one floor-level run unit is within CONTINUOUS_GAP_MM of sink.
+
+        Checks left and right edge gaps. Dishwasher counts as an adjacent run unit
+        (it is placed next to the sink), so a sink+DW pair on the same wall passes.
+        """
+        sx1 = sink.position_mm["x"]
+        sx2 = sx1 + sink.dimensions_mm["width"]
+        for item in placed.positioned_items.values():
+            if item is sink:
+                continue
+            if item.anchor_wall != sink.anchor_wall:
+                continue
+            if item.position_mm["z"] >= Z_LEVEL_SPLIT_MM:
+                continue
+            if not self._is_floor_run_unit(item):
+                continue
+            ix1 = item.position_mm["x"]
+            ix2 = ix1 + item.dimensions_mm["width"]
+            gap = max(0.0, max(sx1, ix1) - min(sx2, ix2))
+            if gap <= CONTINUOUS_GAP_MM:
+                return True
+        return False
+
     def _find(self, keyword: str, placed: PlacementEngineOutput) -> PlacedItem | None:
         """Find first item whose category or name contains keyword (case-insensitive)."""
         kw = keyword.lower()
@@ -920,9 +1205,51 @@ class NKBAValidator:
         return item.position_mm["y"] + item.dimensions_mm["depth"] / 2.0
 
     def _dist2d(self, a: PlacedItem, b: PlacedItem) -> float:
+        """Same-wall local-coord 2D distance (for same-wall checks only)."""
         dx = self._centre_x(a) - self._centre_x(b)
         dy = self._centre_y(a) - self._centre_y(b)
         return math.sqrt(dx * dx + dy * dy)
+
+    def _global_xy(self, item: PlacedItem, spatial: SpatialEngineOutput) -> tuple[float, float]:
+        """Convert item wall-local left-edge coords to global 2D floor-plan center (x, y).
+
+        Wall-local coords: x = left edge along wall, y = wall thickness (~100mm).
+        Returns true room-coordinate center so cross-wall distances are correct.
+        """
+        local_x = item.position_mm["x"]
+        w = item.dimensions_mm["width"]
+        d = item.dimensions_mm["depth"]
+        wall = self._get_wall(item.anchor_wall, spatial)
+        if wall is None:
+            return (local_x + w / 2.0, item.position_mm.get("y", 0.0) + d / 2.0)
+        anchor = wall.anchor.lower()
+        try:
+            if anchor == "north":
+                wall_y = max(p["y"] for p in wall.points)
+                return (local_x + w / 2.0, wall_y - d / 2.0)
+            elif anchor == "south":
+                wall_y = min(p["y"] for p in wall.points)
+                return (local_x + w / 2.0, wall_y + d / 2.0)
+            elif anchor == "east":
+                wall_x = max(p["x"] for p in wall.points)
+                return (wall_x - d / 2.0, local_x + w / 2.0)
+            elif anchor == "west":
+                wall_x = min(p["x"] for p in wall.points)
+                return (wall_x + d / 2.0, local_x + w / 2.0)
+        except (KeyError, ValueError):
+            pass
+        return (local_x + w / 2.0, item.position_mm.get("y", 0.0) + d / 2.0)
+
+    def _dist2d_global(
+        self,
+        a: PlacedItem,
+        b: PlacedItem,
+        spatial: SpatialEngineOutput,
+    ) -> float:
+        """Global 2D Euclidean distance between two item centers (works across walls)."""
+        ax, ay = self._global_xy(a, spatial)
+        bx, by = self._global_xy(b, spatial)
+        return math.sqrt((ax - bx) ** 2 + (ay - by) ** 2)
 
     def _items_on_wall(self, wall_name: str, placed: PlacementEngineOutput) -> list[PlacedItem]:
         """Return items on wall, sorted by x position."""
@@ -967,6 +1294,74 @@ class NKBAValidator:
         nearest = min(right_lefts, default=wall_length)
         return nearest - item_right
 
+    @staticmethod
+    def _edge_gap(a1: float, a2: float, b1: float, b2: float) -> float:
+        """Gap between two 1D intervals [a1,a2] and [b1,b2]. 0 if they touch/overlap."""
+        return max(0.0, max(a1, b1) - min(a2, b2))
+
+    def _is_counter_provider(self, item: PlacedItem) -> bool:
+        """True if item provides counter/landing surface.
+
+        Base cabinets and dishwashers both sit under the continuous countertop
+        and provide usable landing area above them.
+        """
+        combined = (item.category + " " + item.name).lower()
+        return "base_cabinet" in combined or "dishwasher" in combined
+
+    def _landing_left(
+        self,
+        item: PlacedItem,
+        wall_name: str,
+        placed: PlacementEngineOutput,
+    ) -> float:
+        """Counter/landing area to the left of item.
+
+        Walks left from the item edge. Base cabinets and empty gaps both count
+        as usable counter space. Stops at the first non-counter item (appliance,
+        tall cabinet) or the wall start.
+        """
+        item_left = item.position_mm["x"]
+        blockers = [
+            it
+            for it in placed.positioned_items.values()
+            if it.anchor_wall == wall_name
+            and it.sku_id != item.sku_id
+            and it.position_mm["z"] < 500
+            and not self._is_counter_provider(it)
+            and it.position_mm["x"] + it.dimensions_mm["width"] <= item_left + CONTINUOUS_GAP_MM
+        ]
+        if not blockers:
+            return item_left
+        nearest = max(blockers, key=lambda it: it.position_mm["x"] + it.dimensions_mm["width"])
+        return max(0.0, item_left - (nearest.position_mm["x"] + nearest.dimensions_mm["width"]))
+
+    def _landing_right(
+        self,
+        item: PlacedItem,
+        wall_name: str,
+        placed: PlacementEngineOutput,
+        wall_length: float,
+    ) -> float:
+        """Counter/landing area to the right of item.
+
+        Walks right from the item edge. Base cabinets and empty gaps both count
+        as usable counter space. Stops at the first non-counter item or wall end.
+        """
+        item_right = item.position_mm["x"] + item.dimensions_mm["width"]
+        blockers = [
+            it
+            for it in placed.positioned_items.values()
+            if it.anchor_wall == wall_name
+            and it.sku_id != item.sku_id
+            and it.position_mm["z"] < 500
+            and not self._is_counter_provider(it)
+            and it.position_mm["x"] >= item_right - CONTINUOUS_GAP_MM
+        ]
+        if not blockers:
+            return wall_length - item_right
+        nearest = min(blockers, key=lambda it: it.position_mm["x"])
+        return max(0.0, nearest.position_mm["x"] - item_right)
+
     def _get_wall(self, wall_name: str, spatial: SpatialEngineOutput) -> Any:
         """Return Wall by name or None."""
         for wall in spatial.walls:
@@ -1004,17 +1399,103 @@ class NKBAValidator:
     # Layout serialization                                                 #
     # ================================================================== #
 
-    def _serialize_layout(self, placed: PlacementEngineOutput) -> dict[str, Any]:
-        """Convert positioned_items to a plain dict for VariantSummaryDTO.layout."""
-        return {
-            name: {
+    def _serialize_layout(
+        self,
+        placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
+    ) -> dict[str, Any]:
+        """Convert positioned_items from wall-local left-edge to global room center coords.
+
+        The placement engine stores items in wall-local coordinates:
+          - x  = left-edge distance along the wall (0 → wall_length)
+          - y  = wall thickness (~100mm placeholder)
+          - z  = bottom height of the item
+
+        The renderer (layout.py) expects global center coordinates:
+          - x, y = center of item in the global floor plan
+          - z    = vertical center of item
+
+        Rotation is also set here based on which wall the item is anchored to:
+          north→180°, south→0°, east→90°, west→270°.
+        """
+        wall_map = {wall.name: wall for wall in spatial.walls}
+        result: dict[str, Any] = {}
+        for name, item in placed.positioned_items.items():
+            wall = wall_map.get(item.anchor_wall)
+            if wall is not None:
+                pos, rot = self._to_global_center(item, wall)
+            else:
+                # Wall not in spatial (e.g., no-cabinet wall) — leave as-is
+                pos = dict(item.position_mm)
+                rot = item.rotation_z_deg
+            result[name] = {
                 "is_wall": False,
                 "product_id": item.sku_id,
-                "position_mm": item.position_mm,
+                "position_mm": pos,
                 "dimensions_mm": item.dimensions_mm,
-                "rotation_z_deg": item.rotation_z_deg,
+                "rotation_z_deg": rot,
                 "anchor_wall": item.anchor_wall,
                 "zone_type": item.zone_type,
             }
-            for name, item in placed.positioned_items.items()
-        }
+        return result
+
+    def _to_global_center(
+        self,
+        item: PlacedItem,
+        wall: Any,
+    ) -> tuple[dict[str, float], float]:
+        """Convert one item from wall-local left-edge to global room center coords.
+
+        Args:
+            item: PlacedItem with local coords (x=left edge, y=thickness, z=bottom)
+            wall: Wall object with global points and anchor direction
+
+        Returns:
+            (position_mm_global_center, rotation_z_deg)
+        """
+        local_x = item.position_mm["x"]  # left edge along wall
+        local_z_bot = item.position_mm["z"]  # bottom height
+        w = item.dimensions_mm["width"]
+        d = item.dimensions_mm["depth"]
+        h = item.dimensions_mm["height"]
+        anchor = wall.anchor.lower()
+
+        gz = local_z_bot + h / 2.0  # vertical center
+
+        try:
+            if anchor == "north":
+                wall_y = max(p["y"] for p in wall.points)
+                gx = local_x + w / 2.0  # center along x-axis (E-W)
+                gy = wall_y - d / 2.0  # step inward (south) by half-depth
+                rot = 180.0
+            elif anchor == "south":
+                wall_y = min(p["y"] for p in wall.points)
+                gx = local_x + w / 2.0
+                gy = wall_y + d / 2.0  # step inward (north) by half-depth
+                rot = 0.0
+            elif anchor == "east":
+                wall_x = max(p["x"] for p in wall.points)
+                gx = wall_x - d / 2.0  # step inward (west) by half-depth
+                gy = local_x + w / 2.0  # center along y-axis (N-S)
+                rot = 90.0
+            elif anchor == "west":
+                wall_x = min(p["x"] for p in wall.points)
+                gx = wall_x + d / 2.0  # step inward (east) by half-depth
+                gy = local_x + w / 2.0
+                rot = 270.0
+            else:
+                # Unknown anchor — best-effort passthrough
+                gx = local_x + w / 2.0
+                gy = item.position_mm["y"]
+                rot = item.rotation_z_deg
+        except (KeyError, ValueError, StopIteration):
+            logger.warning(
+                "Could not compute global center for '%s' on wall '%s'; using local coords",
+                item.sku_id,
+                item.anchor_wall,
+            )
+            gx = local_x + w / 2.0
+            gy = item.position_mm["y"]
+            rot = item.rotation_z_deg
+
+        return {"x": gx, "y": gy, "z": gz}, rot

@@ -24,7 +24,7 @@ ROOMS: list[dict[str, str]] = [
         "file": "input2.json",
         "icon": "🏗️",
         "name": "Open Plan",
-        "dims": "42000 x 42000mm",
+        "dims": "4200 x 4200mm",
         "openings": "No openings",
     },
     {

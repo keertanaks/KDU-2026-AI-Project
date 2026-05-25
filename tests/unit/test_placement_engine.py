@@ -322,13 +322,15 @@ def test_work_triangle_violation_logged_when_too_small() -> None:
         "FR-01": fridge,
         "ST-01": stove,
     }
+    # All items on same wall ("north_wall") with empty points → _global_xy falls back to local
+    spatial = _make_spatial()
     spillover: list[str] = []
-    engine._check_work_triangle(placed, spillover)
+    engine._check_work_triangle(placed, spatial, spillover)
 
     # Perimeter should be well below 3962mm — violation expected
     assert any("WORKFLOW-03" in entry for entry in spillover)
 
-    # Verify the perimeter really is below min
+    # Verify the perimeter really is below min (using local _dist2d since same-wall)
     perimeter = (
         engine._dist2d(sink, fridge) + engine._dist2d(fridge, stove) + engine._dist2d(stove, sink)
     )

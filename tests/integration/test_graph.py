@@ -1,10 +1,9 @@
 """Integration tests — make real API calls. Run with: pytest tests/integration/ -m integration."""
+
 from __future__ import annotations
 
-import asyncio
-import json
-
 import pytest
+
 from tests.fixtures.sample_inputs import INPUT1, INPUT3, MINIMAL_PREFERENCES
 
 
@@ -40,8 +39,7 @@ async def test_full_pipeline_input3_with_openings():
     assert len(layouts) >= 3
     # At least one variant should have a sink near the north window
     sink_near_window = any(
-        any(r["rule_id"] == "LAYOUT-01" and "window" in r["text"].lower()
-            for r in v.rationale)
+        any(r["rule_id"] == "LAYOUT-01" and "window" in r["text"].lower() for r in v.rationale)
         for v in layouts
     )
     assert sink_near_window, "Expected at least one variant with sink near window (LAYOUT-01)"
@@ -51,10 +49,11 @@ async def test_full_pipeline_input3_with_openings():
 async def test_output_json_matches_render_contract():
     """output.json must pass render.py without errors."""
     import subprocess
-    from pathlib import Path
 
     result = subprocess.run(
         ["python", "render.py", "output.json", "--out-dir", "renders", "--2d-only"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert result.returncode == 0, f"render.py failed:\n{result.stderr}"
