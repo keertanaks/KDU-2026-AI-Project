@@ -2,7 +2,7 @@
 ## Cyncly Auto-Design System — Kitchen 
 ---
 
-##PR Link:
+## PR Link:
 https://github.com/keertanaks/KDU-2026-AI-Project/pull/21
 
 ---
