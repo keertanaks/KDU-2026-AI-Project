@@ -1,0 +1,226 @@
+{
+  "fixture_source": "latest_run.json",
+  "request_id": "bc8e81df-950a-48f9-b072-d46f2f589390",
+  "duration_ms": 18211.506366729736,
+  "layouts": [
+    {
+      "id": "vB",
+      "family": "I",
+      "score": 0.95,
+      "placement_count": 8,
+      "nkba_compliance_pct": 0.7741935483870968,
+      "spillover_count": 1,
+      "warnings": [],
+      "violations": [
+        {"rule_id": "LAYOUT-06", "text": "tall_cabinet_600 not at corner/end on wall north_wall"},
+        {"rule_id": "NKBA-02",   "text": "fridge_70 and sink_single have overlapping front clearance zones"},
+        {"rule_id": "NKBA-11",   "text": "Sink landing: long=600mm (min 610mm), short=0mm (min 457mm)"},
+        {"rule_id": "NKBA-12",   "text": "Prep area beside sink: 600mm < 762mm"},
+        {"rule_id": "NKBA-13",   "text": "< 533mm open space beside dishwasher"},
+        {"rule_id": "NKBA-LA-01","text": "Fridge landing 0mm < 381mm on handle side"},
+        {"rule_id": "NKBA-25",   "text": "Total countertop frontage 450mm < 4013mm"}
+      ],
+      "environment": {
+        "floor": {
+          "points": [
+            {"x": 0,    "y": 0,    "z": 0},
+            {"x": 3600, "y": 0,    "z": 0},
+            {"x": 3600, "y": 3200, "z": 0},
+            {"x": 0,    "y": 3200, "z": 0}
+          ]
+        },
+        "wall": [
+          {
+            "name": "south_wall", "anchor": "south", "thickness_mm": 100,
+            "has_cabinets": false,
+            "dimensions": {"length_mm": 3600, "height": 2700},
+            "points": [
+              {"x": 0,    "y": 0, "z": 0},    {"x": 3600, "y": 0, "z": 0},
+              {"x": 3600, "y": 0, "z": 2700}, {"x": 0,    "y": 0, "z": 2700}
+            ]
+          },
+          {
+            "name": "north_wall", "anchor": "north", "thickness_mm": 100,
+            "has_cabinets": true,
+            "dimensions": {"length_mm": 3600, "height": 2700},
+            "points": [
+              {"x": 0,    "y": 3200, "z": 0},    {"x": 3600, "y": 3200, "z": 0},
+              {"x": 3600, "y": 3200, "z": 2700}, {"x": 0,    "y": 3200, "z": 2700}
+            ]
+          },
+          {
+            "name": "east_wall", "anchor": "east", "thickness_mm": 100,
+            "has_cabinets": true,
+            "dimensions": {"length_mm": 3200, "height": 2700},
+            "points": [
+              {"x": 3600, "y": 0,    "z": 0},    {"x": 3600, "y": 3200, "z": 0},
+              {"x": 3600, "y": 3200, "z": 2700}, {"x": 3600, "y": 0,    "z": 2700}
+            ]
+          },
+          {
+            "name": "west_wall", "anchor": "west", "thickness_mm": 100,
+            "has_cabinets": false,
+            "dimensions": {"length_mm": 3200, "height": 2700},
+            "points": [
+              {"x": 0, "y": 0,    "z": 0},    {"x": 0, "y": 3200, "z": 0},
+              {"x": 0, "y": 3200, "z": 2700}, {"x": 0, "y": 0,    "z": 2700}
+            ]
+          }
+        ],
+        "openings": []
+      },
+      "layout": {
+        "south_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 0.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "north_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 3200.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "east_wall":  {"is_wall": true, "position_mm": {"x": 3600.0, "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "west_wall":  {"is_wall": true, "position_mm": {"x": 0.0,    "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "SKU-A02": {
+          "is_wall": false, "product_id": "SKU-A02",
+          "position_mm": {"x": 350.0, "y": 2850.0, "z": 900.0},
+          "dimensions_mm": {"width": 700.0, "depth": 700.0, "height": 1800.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooling"
+        },
+        "SET1-TALL-600": {
+          "is_wall": false, "product_id": "SET1-TALL-600",
+          "position_mm": {"x": 1000.0, "y": 2900.0, "z": 1050.0},
+          "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 2100.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "storage"
+        },
+        "SKU-S01": {
+          "is_wall": false, "product_id": "SKU-S01",
+          "position_mm": {"x": 1600.0, "y": 2925.0, "z": 450.0},
+          "dimensions_mm": {"width": 600.0, "depth": 550.0, "height": 900.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"
+        },
+        "SKU-A03": {
+          "is_wall": false, "product_id": "SKU-A03",
+          "position_mm": {"x": 2200.0, "y": 2900.0, "z": 425.0},
+          "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 850.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"
+        },
+        "SKU-A01": {
+          "is_wall": false, "product_id": "SKU-A01",
+          "position_mm": {"x": 2800.0, "y": 2900.0, "z": 450.0},
+          "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 900.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"
+        },
+        "SET1-BC-450": {
+          "is_wall": false, "product_id": "SET1-BC-450",
+          "position_mm": {"x": 3325.0, "y": 2900.0, "z": 450.0},
+          "dimensions_mm": {"width": 450.0, "depth": 600.0, "height": 900.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "preparation"
+        },
+        "SKU-A05": {
+          "is_wall": false, "product_id": "SKU-A05",
+          "position_mm": {"x": 2800.0, "y": 2950.0, "z": 2110.0},
+          "dimensions_mm": {"width": 600.0, "depth": 500.0, "height": 400.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"
+        },
+        "SET1-WD-1200": {
+          "is_wall": false, "product_id": "SET1-WD-1200",
+          "position_mm": {"x": 1900.0, "y": 3025.0, "z": 1910.0},
+          "dimensions_mm": {"width": 1200.0, "depth": 350.0, "height": 800.0},
+          "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "storage"
+        }
+      },
+      "rationale": [
+        {"rule_id": "LAYOUT-06", "text": "Cabinet overflow: item forced to corner due to space constraints."},
+        {"rule_id": "NKBA-02",   "text": "Appliance arrangement violates sequence."},
+        {"rule_id": "NKBA-25",   "text": "Flooring materials do not support easy cleaning."}
+      ]
+    },
+    {
+      "id": "vA",
+      "family": "L",
+      "score": 0.88,
+      "placement_count": 13,
+      "nkba_compliance_pct": 0.8387096774193549,
+      "spillover_count": 0,
+      "warnings": [],
+      "violations": [
+        {"rule_id": "LAYOUT-03", "text": "Gap 200mm on wall north_wall between items at x=700 and x=900"},
+        {"rule_id": "LAYOUT-05", "text": "Wall east_wall run end is sink_single (not base_cabinet and not at corner)"},
+        {"rule_id": "NKBA-02",   "text": "fridge_70 and stove_60 have overlapping front clearance zones"},
+        {"rule_id": "NKBA-13",   "text": "< 533mm open space beside dishwasher"},
+        {"rule_id": "NKBA-25",   "text": "Total countertop frontage 3150mm < 4013mm"}
+      ],
+      "environment": {
+        "floor": {
+          "points": [
+            {"x": 0, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 0},
+            {"x": 3600, "y": 3200, "z": 0}, {"x": 0, "y": 3200, "z": 0}
+          ]
+        },
+        "wall": [
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3600, "height": 2700}, "points": [{"x": 0, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 2700}, {"x": 0, "y": 0, "z": 2700}]},
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true,  "dimensions": {"length_mm": 3600, "height": 2700}, "points": [{"x": 0, "y": 3200, "z": 0}, {"x": 3600, "y": 3200, "z": 0}, {"x": 3600, "y": 3200, "z": 2700}, {"x": 0, "y": 3200, "z": 2700}]},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": true,  "dimensions": {"length_mm": 3200, "height": 2700}, "points": [{"x": 3600, "y": 0, "z": 0}, {"x": 3600, "y": 3200, "z": 0}, {"x": 3600, "y": 3200, "z": 2700}, {"x": 3600, "y": 0, "z": 2700}]},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": [{"x": 0, "y": 0, "z": 0}, {"x": 0, "y": 3200, "z": 0}, {"x": 0, "y": 3200, "z": 2700}, {"x": 0, "y": 0, "z": 2700}]}
+        ],
+        "openings": []
+      },
+      "layout": {
+        "south_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 0.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "north_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 3200.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "east_wall":  {"is_wall": true, "position_mm": {"x": 3600.0, "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "west_wall":  {"is_wall": true, "position_mm": {"x": 0.0,    "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "SKU-A02": {"is_wall": false, "product_id": "SKU-A02", "position_mm": {"x": 350.0, "y": 3050.0, "z": 900.0}, "dimensions_mm": {"width": 700.0, "depth": 700.0, "height": 1800.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooling"},
+        "SKU-S01": {"is_wall": false, "product_id": "SKU-S01", "position_mm": {"x": 1800.0, "y": 3050.0, "z": 450.0}, "dimensions_mm": {"width": 600.0, "depth": 550.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"},
+        "SKU-A03": {"is_wall": false, "product_id": "SKU-A03", "position_mm": {"x": 2400.0, "y": 3000.0, "z": 425.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 850.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"},
+        "SKU-A01": {"is_wall": false, "product_id": "SKU-A01", "position_mm": {"x": 3000.0, "y": 3000.0, "z": 450.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"},
+        "SKU-A05": {"is_wall": false, "product_id": "SKU-A05", "position_mm": {"x": 3000.0, "y": 3050.0, "z": 2110.0}, "dimensions_mm": {"width": 600.0, "depth": 500.0, "height": 400.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"},
+        "SET1-BC-600": {"is_wall": false, "product_id": "SET1-BC-600", "position_mm": {"x": 3300.0, "y": 2800.0, "z": 450.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "east_wall", "zone_type": "preparation"},
+        "SET1-BC-450": {"is_wall": false, "product_id": "SET1-BC-450", "position_mm": {"x": 3300.0, "y": 2200.0, "z": 450.0}, "dimensions_mm": {"width": 450.0, "depth": 600.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "east_wall", "zone_type": "preparation"},
+        "SET1-TALL-600": {"is_wall": false, "product_id": "SET1-TALL-600", "position_mm": {"x": 3300.0, "y": 1600.0, "z": 1050.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 2100.0}, "rotation_z_deg": 180.0, "anchor_wall": "east_wall", "zone_type": "storage"},
+        "SET1-WD-1200": {"is_wall": false, "product_id": "SET1-WD-1200", "position_mm": {"x": 1800.0, "y": 3125.0, "z": 1910.0}, "dimensions_mm": {"width": 1200.0, "depth": 350.0, "height": 800.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "storage"}
+      },
+      "rationale": [
+        {"rule_id": "LAYOUT-03", "text": "Gap 200mm on wall north_wall."},
+        {"rule_id": "NKBA-25",   "text": "Total countertop frontage 3150mm < 4013mm."}
+      ]
+    },
+    {
+      "id": "vC",
+      "family": "I",
+      "score": 0.75,
+      "placement_count": 7,
+      "nkba_compliance_pct": 0.7096774193548387,
+      "spillover_count": 0,
+      "warnings": [],
+      "violations": [
+        {"rule_id": "NKBA-25", "text": "Total countertop frontage 2100mm < 4013mm"}
+      ],
+      "environment": {
+        "floor": {
+          "points": [
+            {"x": 0, "y": 0, "z": 0}, {"x": 3600, "y": 0, "z": 0},
+            {"x": 3600, "y": 3200, "z": 0}, {"x": 0, "y": 3200, "z": 0}
+          ]
+        },
+        "wall": [
+          {"name": "south_wall", "anchor": "south", "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "north_wall", "anchor": "north", "thickness_mm": 100, "has_cabinets": true, "dimensions": {"length_mm": 3600, "height": 2700}, "points": []},
+          {"name": "east_wall",  "anchor": "east",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []},
+          {"name": "west_wall",  "anchor": "west",  "thickness_mm": 100, "has_cabinets": false, "dimensions": {"length_mm": 3200, "height": 2700}, "points": []}
+        ],
+        "openings": []
+      },
+      "layout": {
+        "north_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 3200.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "south_wall": {"is_wall": true, "position_mm": {"x": 1800.0, "y": 0.0, "z": 1350.0}, "dimensions_mm": {"width": 3600.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "east_wall":  {"is_wall": true, "position_mm": {"x": 3600.0, "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "west_wall":  {"is_wall": true, "position_mm": {"x": 0.0,    "y": 1600.0, "z": 1350.0}, "dimensions_mm": {"width": 3200.0, "depth": 100.0, "height": 2700.0}, "rotation_z_deg": 0.0},
+        "SKU-A02": {"is_wall": false, "product_id": "SKU-A02", "position_mm": {"x": 350.0, "y": 3050.0, "z": 900.0}, "dimensions_mm": {"width": 700.0, "depth": 700.0, "height": 1800.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooling"},
+        "SKU-S01": {"is_wall": false, "product_id": "SKU-S01", "position_mm": {"x": 1350.0, "y": 3050.0, "z": 450.0}, "dimensions_mm": {"width": 600.0, "depth": 550.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"},
+        "SKU-A03": {"is_wall": false, "product_id": "SKU-A03", "position_mm": {"x": 1950.0, "y": 3000.0, "z": 425.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 850.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cleaning"},
+        "SKU-A01": {"is_wall": false, "product_id": "SKU-A01", "position_mm": {"x": 2750.0, "y": 3000.0, "z": 450.0}, "dimensions_mm": {"width": 600.0, "depth": 600.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"},
+        "SKU-A05": {"is_wall": false, "product_id": "SKU-A05", "position_mm": {"x": 2750.0, "y": 3050.0, "z": 2110.0}, "dimensions_mm": {"width": 600.0, "depth": 500.0, "height": 400.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "cooking"},
+        "SET1-BC-450": {"is_wall": false, "product_id": "SET1-BC-450", "position_mm": {"x": 3200.0, "y": 3000.0, "z": 450.0}, "dimensions_mm": {"width": 450.0, "depth": 600.0, "height": 900.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "preparation"},
+        "SET1-WD-1200": {"is_wall": false, "product_id": "SET1-WD-1200", "position_mm": {"x": 1350.0, "y": 3125.0, "z": 1910.0}, "dimensions_mm": {"width": 1200.0, "depth": 350.0, "height": 800.0}, "rotation_z_deg": 180.0, "anchor_wall": "north_wall", "zone_type": "storage"}
+      },
+      "rationale": [
+        {"rule_id": "NKBA-25", "text": "Total countertop frontage 2100mm < 4013mm."}
+      ]
+    }
+  ]
+}

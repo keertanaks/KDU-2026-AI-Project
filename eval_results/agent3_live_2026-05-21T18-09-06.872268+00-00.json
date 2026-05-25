@@ -1,0 +1,20 @@
+{
+  "eval_id": "7e881488-ffb2-4c83-80f5-e34355cc7b2e",
+  "suite_name": "agent3_live",
+  "is_live": true,
+  "timestamp": "2026-05-21T18:09:06.872268+00:00",
+  "passed": false,
+  "metrics": {
+    "semantic_term_validity_rate": null,
+    "mean_latency_ms": null
+  },
+  "failures": [
+    "a3_d01: 'LayoutStrategist' object has no attribute 'plan'",
+    "a3_d02: 'LayoutStrategist' object has no attribute 'plan'",
+    "a3_d03: 'LayoutStrategist' object has no attribute 'plan'",
+    "a3_d04: 'LayoutStrategist' object has no attribute 'plan'",
+    "a3_d05: 'LayoutStrategist' object has no attribute 'plan'",
+    "a3_d06: 'LayoutStrategist' object has no attribute 'plan'"
+  ],
+  "latency_ms": 15.999999974155799
+}

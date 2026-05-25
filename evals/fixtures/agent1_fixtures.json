@@ -1,0 +1,232 @@
+[
+  {
+    "test_id": "a1_01",
+    "prompt": "I want a modern navy blue L-shaped kitchen with a dishwasher",
+    "expected": {
+      "color_keyword": "navy blue",
+      "layout_family": "L",
+      "style": "modern",
+      "budget_tier": null,
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": "navy blue",
+      "color_hex": "#1F3A5F",
+      "layout_family": "L",
+      "style": "modern",
+      "cabinet_preference": null,
+      "special_requests": ["dishwasher"],
+      "ignored": [],
+      "budget_tier": null,
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_02",
+    "prompt": "Give me a cheap galley kitchen, white cabinets, no frills",
+    "expected": {
+      "color_keyword": "white",
+      "layout_family": "I",
+      "style": null,
+      "budget_tier": "low",
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": "white",
+      "color_hex": "#FFFFFF",
+      "layout_family": "I",
+      "style": null,
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "low",
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_03",
+    "prompt": "Something minimalist, no specific shape preference",
+    "expected": {
+      "color_keyword": null,
+      "layout_family": null,
+      "style": "minimalist",
+      "budget_tier": null,
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": null,
+      "style": "minimalist",
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": null,
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_04",
+    "prompt": "Cosy kitchen, something that feels homey and warm",
+    "expected": {
+      "color_keyword": null,
+      "layout_family": null,
+      "style": null,
+      "budget_tier": null,
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": null,
+      "style": null,
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": null,
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_05",
+    "prompt": "I need an affordable kitchen, budget is tight",
+    "expected": {
+      "color_keyword": null,
+      "layout_family": null,
+      "style": null,
+      "budget_tier": "low",
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": null,
+      "style": null,
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "low",
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_06",
+    "prompt": "Premium luxury bespoke kitchen, sparing no expense",
+    "expected": {
+      "color_keyword": null,
+      "layout_family": null,
+      "style": null,
+      "budget_tier": "premium",
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": null,
+      "style": null,
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "premium",
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_07",
+    "prompt": "I want a shaker style kitchen with walnut cabinets and a U-shape",
+    "expected": {
+      "color_keyword": "walnut",
+      "layout_family": "U",
+      "style": "shaker",
+      "budget_tier": null,
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": "walnut",
+      "color_hex": "#6F4E37",
+      "layout_family": "U",
+      "style": "shaker",
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": null,
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_08",
+    "prompt": "Traditional oak kitchen, I also want AC and good lighting",
+    "expected": {
+      "color_keyword": "oak",
+      "layout_family": null,
+      "style": "traditional",
+      "budget_tier": null,
+      "cabinet_preference": null
+    },
+    "saved_output": {
+      "color_keyword": "oak",
+      "color_hex": "#D4A574",
+      "layout_family": null,
+      "style": "traditional",
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": ["AC", "lighting"],
+      "budget_tier": null,
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_09",
+    "prompt": "High-end modern kitchen with base cabinets only, no wall cabinets",
+    "expected": {
+      "color_keyword": null,
+      "layout_family": null,
+      "style": "modern",
+      "budget_tier": "high",
+      "cabinet_preference": "base_only"
+    },
+    "saved_output": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": null,
+      "style": "modern",
+      "cabinet_preference": "base_only",
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "high",
+      "must_have": [],
+      "avoid": []
+    }
+  },
+  {
+    "test_id": "a1_10",
+    "prompt": "Mid-range sage green kitchen with floor-to-ceiling cabinets and an island",
+    "expected": {
+      "color_keyword": "sage green",
+      "layout_family": null,
+      "style": null,
+      "budget_tier": "mid",
+      "cabinet_preference": "with_tall"
+    },
+    "saved_output": {
+      "color_keyword": "sage green",
+      "color_hex": "#9CAF88",
+      "layout_family": null,
+      "style": null,
+      "cabinet_preference": "with_tall",
+      "special_requests": ["island"],
+      "ignored": [],
+      "budget_tier": "mid",
+      "must_have": [],
+      "avoid": []
+    }
+  }
+]

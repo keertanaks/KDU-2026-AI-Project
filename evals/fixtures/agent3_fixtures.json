@@ -1,0 +1,231 @@
+[
+  {
+    "test_id": "a3_01",
+    "variant_id": "variant-1",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at north-west corner",
+        "sink": "near north_wall window",
+        "stove": "centre of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove",
+        "base_cab_1": "left end of east_wall"
+      },
+      "wall_strategies": {
+        "north_wall": ["at north-west corner", "near north_wall window", "centre of north_wall", "above stove"],
+        "east_wall": ["left end of east_wall", "next to sink"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking",
+        "base_cab_1": "preparation"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_02",
+    "variant_id": "variant-2",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at north-east corner",
+        "sink": "centre of east_wall",
+        "stove": "left end of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove",
+        "tall_cabinet": "right end of east_wall"
+      },
+      "wall_strategies": {
+        "north_wall": ["at north-east corner", "left end of north_wall", "above stove"],
+        "east_wall": ["centre of east_wall", "next to sink", "right end of east_wall"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking",
+        "tall_cabinet": "storage"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_03",
+    "variant_id": "variant-3",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at south-west corner",
+        "sink": "centre of north_wall",
+        "stove": "right end of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove"
+      },
+      "wall_strategies": {
+        "north_wall": ["centre of north_wall", "right end of north_wall", "above stove", "next to sink"],
+        "west_wall": ["at south-west corner"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_04",
+    "variant_id": "variant-4",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at north-east corner",
+        "sink": "near east_wall window",
+        "stove": "left end of east_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove",
+        "tall_cabinet": "right end of north_wall"
+      },
+      "wall_strategies": {
+        "north_wall": ["at north-east corner", "right end of north_wall"],
+        "east_wall": ["near east_wall window", "next to sink", "left end of east_wall", "above stove"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking",
+        "tall_cabinet": "storage"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_05",
+    "variant_id": "variant-5",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at south-east corner",
+        "sink": "centre of north_wall",
+        "stove": "left end of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove"
+      },
+      "wall_strategies": {
+        "north_wall": ["left end of north_wall", "above stove", "centre of north_wall", "next to sink"],
+        "east_wall": ["at south-east corner"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_06",
+    "variant_id": "variant-6",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at north-west corner",
+        "sink": "near north_wall window",
+        "stove": "right end of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove",
+        "microwave": "next to stove"
+      },
+      "wall_strategies": {
+        "north_wall": ["at north-west corner", "near north_wall window", "right end of north_wall", "above stove", "next to stove"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking",
+        "microwave": "cooking"
+      }
+    },
+    "expected": {
+      "all_terms_valid": true,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_07_invalid",
+    "variant_id": "variant-7-invalid",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "in the middle",
+        "sink": "anywhere",
+        "stove": "centre of north_wall",
+        "dishwasher": "next to sink",
+        "hood": "above stove"
+      },
+      "wall_strategies": {
+        "north_wall": ["in the middle", "anywhere", "centre of north_wall", "above stove"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking"
+      }
+    },
+    "expected": {
+      "all_terms_valid": false,
+      "work_triangle_ok": true
+    }
+  },
+  {
+    "test_id": "a3_08_invalid",
+    "variant_id": "variant-8-invalid",
+    "saved_output": {
+      "item_hints": {
+        "fridge": "at north-west corner",
+        "sink": "somewhere on the wall",
+        "stove": "in the corner somewhere",
+        "dishwasher": "next to sink",
+        "hood": "above stove"
+      },
+      "wall_strategies": {
+        "north_wall": ["at north-west corner", "somewhere on the wall", "in the corner somewhere", "above stove"]
+      },
+      "zone_assignments": {
+        "fridge": "cooling",
+        "sink": "cleaning",
+        "stove": "cooking",
+        "dishwasher": "cleaning",
+        "hood": "cooking"
+      }
+    },
+    "expected": {
+      "all_terms_valid": false,
+      "work_triangle_ok": true
+    }
+  }
+]

@@ -1,0 +1,170 @@
+[
+  {
+    "test_id": "a2_d01",
+    "intent_input": {
+      "color_keyword": "navy blue",
+      "color_hex": "#1F3A5F",
+      "layout_family": "L",
+      "style": "modern",
+      "cabinet_preference": null,
+      "special_requests": ["dishwasher"],
+      "ignored": [],
+      "budget_tier": "high",
+      "must_have": ["dishwasher", "hood"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d02",
+    "intent_input": {
+      "color_keyword": "walnut",
+      "color_hex": "#6F4E37",
+      "layout_family": "U",
+      "style": "shaker",
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "mid",
+      "must_have": ["dishwasher"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d03",
+    "intent_input": {
+      "color_keyword": null,
+      "color_hex": null,
+      "layout_family": "I",
+      "style": "minimalist",
+      "cabinet_preference": "base_only",
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "low",
+      "must_have": [],
+      "avoid": ["double_sink"]
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d04",
+    "intent_input": {
+      "color_keyword": "white",
+      "color_hex": "#FFFFFF",
+      "layout_family": null,
+      "style": "traditional",
+      "cabinet_preference": "with_tall",
+      "special_requests": ["island", "pantry"],
+      "ignored": [],
+      "budget_tier": "premium",
+      "must_have": ["dishwasher", "hood", "oven"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d05",
+    "intent_input": {
+      "color_keyword": "charcoal",
+      "color_hex": "#3D3D3D",
+      "layout_family": "L",
+      "style": "industrial",
+      "cabinet_preference": "with_uppers",
+      "special_requests": ["microwave"],
+      "ignored": [],
+      "budget_tier": "high",
+      "must_have": ["dishwasher", "microwave"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d06",
+    "intent_input": {
+      "color_keyword": "sage green",
+      "color_hex": "#9CAF88",
+      "layout_family": null,
+      "style": "farmhouse",
+      "cabinet_preference": null,
+      "special_requests": [],
+      "ignored": [],
+      "budget_tier": "mid",
+      "must_have": ["hood"],
+      "avoid": ["tall_cabinets"]
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d07",
+    "intent_input": {
+      "color_keyword": "oak",
+      "color_hex": "#D4A574",
+      "layout_family": "U",
+      "style": "rustic",
+      "cabinet_preference": "with_tall",
+      "special_requests": ["wine fridge"],
+      "ignored": [],
+      "budget_tier": "high",
+      "must_have": ["dishwasher", "hood"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  },
+  {
+    "test_id": "a2_d08",
+    "intent_input": {
+      "color_keyword": "matte black",
+      "color_hex": "#2E2E2E",
+      "layout_family": null,
+      "style": "contemporary",
+      "cabinet_preference": null,
+      "special_requests": ["coffee station"],
+      "ignored": [],
+      "budget_tier": "premium",
+      "must_have": ["dishwasher", "hood", "microwave"],
+      "avoid": []
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_min_mm": 4013,
+      "required_baseline": ["fridge", "sink", "stove", "hood"]
+    }
+  }
+]

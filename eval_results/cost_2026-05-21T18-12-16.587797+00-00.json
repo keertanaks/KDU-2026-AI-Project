@@ -1,0 +1,13 @@
+{
+  "eval_id": "dd958913-511c-46fb-a41f-f102dbf165ab",
+  "suite_name": "cost",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:12:16.587797+00:00",
+  "passed": true,
+  "metrics": {
+    "math_correctness_rate": 1.0,
+    "cases_tested": 12.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

@@ -1,0 +1,146 @@
+[
+  {
+    "test_id": "a2_01",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05"],
+        "cleaning": ["SKU-S01", "SKU-A03"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C01", "SKU-C02"],
+        "storage": ["SKU-C05", "SKU-C06"]
+      },
+      "total_frontage_mm": 4200,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "modern",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  },
+  {
+    "test_id": "a2_02",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05"],
+        "cleaning": ["SKU-S01", "SKU-A03"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C01", "SKU-C02", "SKU-C03"],
+        "storage": ["SKU-C04", "SKU-C05", "SKU-C06"]
+      },
+      "total_frontage_mm": 5400,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "traditional",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  },
+  {
+    "test_id": "a2_03",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05"],
+        "cleaning": ["SKU-S01", "SKU-A03"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C01"],
+        "storage": ["SKU-C06"]
+      },
+      "total_frontage_mm": 4050,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "shaker",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  },
+  {
+    "test_id": "a2_04",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05"],
+        "cleaning": ["SKU-S01", "SKU-A03"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C07", "SKU-C08"],
+        "storage": ["SKU-C09", "SKU-C10"]
+      },
+      "total_frontage_mm": 4500,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "minimalist",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  },
+  {
+    "test_id": "a2_05",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05", "SKU-A07"],
+        "cleaning": ["SKU-S01", "SKU-A03"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C01", "SKU-C02", "SKU-C10"],
+        "storage": ["SKU-C04", "SKU-C05", "SKU-C06"]
+      },
+      "total_frontage_mm": 6300,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "modern",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  },
+  {
+    "test_id": "a2_06",
+    "saved_output": {
+      "zone_groups": {
+        "cooking": ["SKU-A01", "SKU-A05"],
+        "cleaning": ["SKU-S01"],
+        "cooling": ["SKU-A02"],
+        "preparation": ["SKU-C01", "SKU-C02"],
+        "storage": ["SET1-TALL-600", "SKU-C06"]
+      },
+      "total_frontage_mm": 4800,
+      "baseline_items_present": ["fridge", "sink", "stove", "hood"],
+      "style": "modern",
+      "nkba_constraints": {
+        "min_aisle_mm": 1200,
+        "work_triangle_min_mm": 3962
+      }
+    },
+    "expected": {
+      "all_zones_covered": true,
+      "baseline_guarantee": true,
+      "frontage_ok": true
+    }
+  }
+]

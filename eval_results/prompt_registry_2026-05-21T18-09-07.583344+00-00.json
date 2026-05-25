@@ -1,0 +1,15 @@
+{
+  "eval_id": "e59063cb-9089-4012-89a6-1079cab52f06",
+  "suite_name": "prompt_registry",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:09:07.583344+00:00",
+  "passed": true,
+  "metrics": {
+    "registry_load_rate": 1.0,
+    "metadata_complete_rate": 1.0,
+    "prompts_non_empty_rate": 1.0,
+    "hash_deterministic_ok": 1.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

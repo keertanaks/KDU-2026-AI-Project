@@ -1,0 +1,14 @@
+{
+  "eval_id": "52d5918d-d8f8-4938-aa1c-610baf6baf32",
+  "suite_name": "guardrails",
+  "is_live": false,
+  "timestamp": "2026-05-21T18:07:25.507837+00:00",
+  "passed": true,
+  "metrics": {
+    "false_negative_rate": 0.0,
+    "false_positive_rate": 0.0,
+    "bad_cases_tested": 6.0
+  },
+  "failures": [],
+  "latency_ms": 0.0
+}

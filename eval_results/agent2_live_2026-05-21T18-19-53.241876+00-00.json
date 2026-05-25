@@ -1,0 +1,26 @@
+{
+  "eval_id": "09bd9c20-59d2-4993-b45d-9ec9e8d2beb0",
+  "suite_name": "agent2_live",
+  "is_live": true,
+  "timestamp": "2026-05-21T18:19:53.241876+00:00",
+  "passed": false,
+  "metrics": {
+    "zone_coverage_rate": 1.0,
+    "baseline_guarantee_rate": 0.0,
+    "frontage_compliance_rate": 0.625
+  },
+  "failures": [
+    "a2_d01: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d02: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d02: total_frontage_mm=3600.0 < 4013.0",
+    "a2_d03: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d03: total_frontage_mm=3000.0 < 4013.0",
+    "a2_d04: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d05: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d05: total_frontage_mm=3550.0 < 4013.0",
+    "a2_d06: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d07: baseline missing ['fridge', 'sink', 'stove', 'hood']",
+    "a2_d08: baseline missing ['fridge', 'sink', 'stove', 'hood']"
+  ],
+  "latency_ms": 13562.999999994645
+}
