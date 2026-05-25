@@ -51,6 +51,8 @@ AISLE_2COOK_MM: float = 1219.0
 WALKWAY_MM: float = 914.0
 LAYOUT04_ADJ_MM: float = 1200.0  # base_cabinet adjacency threshold for LAYOUT-04
 Z_LEVEL_SPLIT_MM: float = 500.0  # items below this z are floor-level, above are wall-level
+WALKWAY_MIN_SINGLE_COOK_MM: float = 1067.0  # NKBA-WW-01 single-cook walkway minimum
+WALKWAY_MIN_MULTI_COOK_MM: float = 1219.0  # NKBA-WW-01 multi-cook walkway minimum
 
 # Keywords for items that are self-supporting floor-level run units.
 # These count toward the continuous run (LAYOUT-03) and do not trigger
@@ -96,6 +98,7 @@ RULE_WEIGHTS: dict[str, float] = {
     "LAYOUT-04": 0.08,
     "LAYOUT-05": 0.07,
     "LAYOUT-06": 0.06,
+    "NKBA-WW-01": 0.10,
 }
 
 # Spillover log entries that are purely informational — do NOT count against score.
@@ -120,7 +123,7 @@ _SCORE_CAP_LAYOUT_RUN: float = 0.88  # LAYOUT-03 or LAYOUT-04
 
 
 class NKBAValidator:
-    """Run all 31 NKBA/project rules and produce a scored VariantSummaryDTO."""
+    """Run all 32 NKBA/project rules and produce a scored VariantSummaryDTO."""
 
     def validate(
         self,
@@ -131,7 +134,7 @@ class NKBAValidator:
         """Evaluate all rules and return a fully scored VariantSummaryDTO."""
         violations: list[dict[str, Any]] = []
 
-        # ── 11 Project rules (weighted) ──────────────────────────────────
+        # ── 12 Project rules (weighted) ──────────────────────────────────
         self._check_nkba_cl_01(placed, spatial, violations)
         self._check_nkba_cl_02(placed, spatial, violations)
         self._check_workflow_01(placed, spatial, violations)
@@ -143,6 +146,7 @@ class NKBAValidator:
         self._check_layout_04(placed, violations)
         self._check_layout_05(placed, spatial, violations)
         self._check_layout_06(placed, spatial, violations)
+        self._check_nkba_ww_01(placed, spatial, preprocessing, violations)
 
         # ── 20 Official NKBA rules (unweighted, count only) ──────────────
         self._check_nkba_01(spatial, violations)
@@ -166,7 +170,7 @@ class NKBAValidator:
         self._check_nkba_19(placed, violations)
         self._check_nkba_25(placed, violations)
 
-        total_rules = 31
+        total_rules = 32  # 12 project rules (weighted) + 20 official NKBA rules
         violated_ids = {v["rule_id"] for v in violations}
         passed_rules = total_rules - len(violated_ids)
         nkba_pct = passed_rules / total_rules
@@ -225,6 +229,8 @@ class NKBAValidator:
         warnings = list(placed.collision_flags)
         if any("CONSTRAINT_VIOLATION" in s for s in placed.spillover_log):
             warnings.append("One or more items forced to corner — check LAYOUT-06")
+        # Merge color-substitution warnings from Layer 2 so they surface in the UI.
+        warnings.extend(preprocessing.color_warnings)
 
         layout = self._serialize_layout(placed, spatial)
 
@@ -611,6 +617,35 @@ class NKBAValidator:
                         "text": (f"'{item.name}' not at corner/end on wall '{item.anchor_wall}'"),
                     }
                 )
+
+    def _check_nkba_ww_01(
+        self,
+        placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
+        preprocessing: PreprocessingOutput,
+        violations: list[dict[str, Any]],
+    ) -> None:
+        """NKBA-WW-01: Walkway between facing cabinet runs (or run and island) >= threshold.
+
+        Single-cook kitchen: walkway must be >= WALKWAY_MIN_SINGLE_COOK_MM (1067mm).
+        Multi-cook kitchen:  walkway must be >= WALKWAY_MIN_MULTI_COOK_MM  (1219mm).
+
+        Cook count is read from preprocessing.nkba_constraints["num_cooks"]; defaults to 1.
+        Returns without firing if no facing cabinet arrangement is detected (single-wall layouts).
+        """
+        num_cooks = int(preprocessing.nkba_constraints.get("num_cooks", 1))
+        min_walkway = WALKWAY_MIN_MULTI_COOK_MM if num_cooks > 1 else WALKWAY_MIN_SINGLE_COOK_MM
+        walkway = self._compute_facing_walkway(placed, spatial)
+        if walkway is None:
+            return  # no facing arrangement — rule does not apply
+        if walkway < min_walkway:
+            cook_label = "multi" if num_cooks > 1 else "single"
+            violations.append(
+                {
+                    "rule_id": "NKBA-WW-01",
+                    "text": (f"Walkway {walkway:.0f}mm < {min_walkway:.0f}mm ({cook_label}-cook)"),
+                }
+            )
 
     # ================================================================== #
     # 20 Official NKBA Rules                                               #
@@ -1060,6 +1095,83 @@ class NKBAValidator:
     # ================================================================== #
     # Helpers                                                              #
     # ================================================================== #
+
+    def _compute_facing_walkway(
+        self,
+        placed: PlacementEngineOutput,
+        spatial: SpatialEngineOutput,
+    ) -> float | None:
+        """Compute the minimum walkway gap between facing cabinet runs or island vs. run.
+
+        Checks N/S wall pairs first, then E/W wall pairs, then island items.
+        Only floor-level items (z < Z_LEVEL_SPLIT_MM) count toward each run depth.
+
+        Returns:
+            Minimum walkway gap in mm, or None if no facing arrangement is detected
+            (i.e., single-wall layout with no island).
+        """
+        # ── North / South facing pair ──────────────────────────────────
+        north_items = [
+            it
+            for w in spatial.walls
+            if w.anchor.lower() == "north"
+            for it in self._items_on_wall(w.name, placed)
+            if it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+        ]
+        south_items = [
+            it
+            for w in spatial.walls
+            if w.anchor.lower() == "south"
+            for it in self._items_on_wall(w.name, placed)
+            if it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+        ]
+        if north_items and south_items:
+            room_depth = self._room_depth(spatial)
+            depth_n = max(it.dimensions_mm["depth"] for it in north_items)
+            depth_s = max(it.dimensions_mm["depth"] for it in south_items)
+            return room_depth - depth_n - depth_s
+
+        # ── East / West facing pair ─────────────────────────────────────
+        east_items = [
+            it
+            for w in spatial.walls
+            if w.anchor.lower() == "east"
+            for it in self._items_on_wall(w.name, placed)
+            if it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+        ]
+        west_items = [
+            it
+            for w in spatial.walls
+            if w.anchor.lower() == "west"
+            for it in self._items_on_wall(w.name, placed)
+            if it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+        ]
+        if east_items and west_items:
+            all_x = [p["x"] for w in spatial.walls for p in w.points if "x" in p]
+            room_width = float(max(all_x) - min(all_x)) if all_x else 3000.0
+            depth_e = max(it.dimensions_mm["depth"] for it in east_items)
+            depth_w = max(it.dimensions_mm["depth"] for it in west_items)
+            return room_width - depth_e - depth_w
+
+        # ── Island vs. nearest wall run ─────────────────────────────────
+        island_items = [
+            it
+            for it in placed.positioned_items.values()
+            if "island" in it.anchor_wall.lower() and it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+        ]
+        if island_items:
+            wall_items = [
+                it
+                for it in placed.positioned_items.values()
+                if "island" not in it.anchor_wall.lower() and it.position_mm["z"] < Z_LEVEL_SPLIT_MM
+            ]
+            if wall_items:
+                room_depth = self._room_depth(spatial)
+                island_depth = max(it.dimensions_mm["depth"] for it in island_items)
+                wall_depth = max(it.dimensions_mm["depth"] for it in wall_items)
+                return room_depth - island_depth - wall_depth
+
+        return None  # single-wall layout, no island — rule does not apply
 
     def _detect_floor_collisions(
         self,

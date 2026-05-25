@@ -15,6 +15,7 @@ from dtos.contracts import (
     PlacementEngineOutput,
     VariantSummaryDTO,
 )
+from pipeline.budget_optimizer import BudgetOptimizer
 from pipeline.nkba_validator import NKBAValidator
 from pipeline.output_generator import OutputGenerator
 from pipeline.placement_engine import PlacementEngine
@@ -42,6 +43,7 @@ class KitchenGraph:
         self._zone_planner = ZonePlanner(client)
         self._placement = PlacementEngine()
         self._validator = NKBAValidator()
+        self._budget_optimizer = BudgetOptimizer(self._validator)
         self._output = OutputGenerator(client)
         self._output_path = output_path
         self._start_time = 0.0
@@ -50,6 +52,11 @@ class KitchenGraph:
     async def run(self, input_json: dict[str, Any]) -> FinalOutput:
         """Execute the full pipeline and return FinalOutput."""
         self._start_time = time.time()
+        # Extract optional numeric budget target from user preferences.
+        prefs: dict[str, Any] = input_json.get("preferences", {})
+        raw_budget = prefs.get("budget_target_gbp")
+        budget_target: float | None = float(raw_budget) if raw_budget else None
+
         initial: dict[str, Any] = {
             "input_json": input_json,
             "spatial_output": None,
@@ -59,6 +66,7 @@ class KitchenGraph:
             "validated_variants": [],
             "retry_context": {},
             "final_output": None,
+            "budget_target_gbp": budget_target,
         }
         result: dict[str, Any] = await self._graph.ainvoke(initial)
         return result["final_output"]  # type: ignore[no-any-return]
@@ -76,6 +84,7 @@ class KitchenGraph:
         graph.add_node("zone_planner", self._node_zone_planner)
         graph.add_node("placement", self._node_placement)
         graph.add_node("validation", self._node_validation)
+        graph.add_node("budget_optimization", self._node_budget_optimization)
         graph.add_node("output", self._node_output)
 
         graph.add_edge(START, "spatial")
@@ -86,8 +95,9 @@ class KitchenGraph:
         graph.add_conditional_edges(
             "validation",
             self._should_retry,
-            {"retry": "zone_planner", "done": "output"},
+            {"retry": "zone_planner", "done": "budget_optimization"},
         )
+        graph.add_edge("budget_optimization", "output")
         graph.add_edge("output", END)
 
         return graph.compile()
@@ -188,6 +198,49 @@ class KitchenGraph:
                 logger.info("Retry triggered for variants: %s", list(new_retry))
 
         return {"validated_variants": validated, "retry_context": new_retry}
+
+    def _node_budget_optimization(self, state: KitchenGraphState) -> dict[str, Any]:
+        """Layer 5b: estimate variant costs and propose substitutions if over budget.
+
+        Runs for every validated variant. If no budget target is set the node
+        still attaches a cost estimate (BudgetOptimizationDTO) to each variant
+        so the UI can display "Estimated Cost" unconditionally.
+
+        placed_variants and validated_variants are paired by position (both lists
+        come from the same parallel placement pass and share the same order).
+        """
+        import dataclasses as _dc
+
+        budget_target: float | None = state.get("budget_target_gbp")  # type: ignore[call-overload]
+        placed_by_id = {p.variant_id: p for p in state["placed_variants"]}
+        spatial = state["spatial_output"]
+        preprocessing = state["preprocessing_output"]
+
+        enriched: list[VariantSummaryDTO] = []
+        for variant in state["validated_variants"]:
+            placed = placed_by_id.get(variant.id)
+            if placed is None:
+                logger.warning(
+                    "Budget optimizer: no placed data for variant %s — skipping", variant.id
+                )
+                enriched.append(variant)
+                continue
+
+            try:
+                budget_result = self._budget_optimizer.optimize_variant(
+                    variant=variant,
+                    placed=placed,
+                    target_budget_gbp=budget_target,
+                    spatial=spatial,
+                    preprocessing=preprocessing,
+                )
+                enriched.append(_dc.replace(variant, budget_optimization=budget_result))
+            except Exception as exc:
+                logger.error("Budget optimizer failed for variant %s: %s", variant.id, exc)
+                enriched.append(variant)  # keep original on error — never drop a variant
+
+        logger.info("Budget optimization complete: %d variants processed", len(enriched))
+        return {"validated_variants": enriched}
 
     async def _node_output(self, state: KitchenGraphState) -> dict[str, Any]:
         """Layer 5: assemble FinalOutput, write output.json, render PNGs."""

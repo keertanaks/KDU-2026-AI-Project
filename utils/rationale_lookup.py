@@ -41,6 +41,12 @@ RULE_EXPLANATIONS: dict[str, str] = {
     "NKBA-18": "Refrigerator clearance or door swing conflicts with other appliances or walls.",
     "NKBA-19": "Cooktop or range hood clearance to walls or cabinets below minimum (600mm clearance).",
     "NKBA-25": "Flooring, materials, or finishes do not support easy cleaning and maintenance.",
+    # ── NKBA-WW-01: Walkway width between facing runs / island ──
+    "NKBA-WW-01": (
+        "Walkway between the island (or facing cabinet run) is narrower than the NKBA-required "
+        "minimum. Single-cook kitchens need at least 1067mm; multi-cook kitchens need at least "
+        "1219mm to allow two people to work simultaneously without obstructing each other."
+    ),
 }
 
 

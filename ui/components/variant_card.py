@@ -56,9 +56,7 @@ def zone_pills_html(layout_dict: dict[str, Any]) -> str:
     )
 
 
-def _build_threejs_html(
-    v_id: str, family: str, layout: dict[str, Any], env: dict[str, Any]
-) -> str:
+def _build_threejs_html(v_id: str, family: str, layout: dict[str, Any], env: dict[str, Any]) -> str:
     floor_data = env.get("floor", {})
     walls_data = env.get("wall", [])
     floor_dims = floor_data.get("dimensions_mm", {})
@@ -398,6 +396,16 @@ def render_variant_card(v: Any, index: int) -> None:
         )
     else:
         st.markdown('<span style="color:#38A169">✅ No violations</span>', unsafe_allow_html=True)
+
+    warnings_list = list(_get(v, "warnings") or [])
+    if warnings_list:
+        for w in warnings_list:
+            st.markdown(
+                f'<div style="background:#2D1F00;border-left:3px solid #D69E2E;'
+                f"padding:6px 12px;border-radius:4px;margin:4px 0;"
+                f'color:#D69E2E;font-size:0.85rem">⚠️ {w}</div>',
+                unsafe_allow_html=True,
+            )
 
     if rationale:
         for entry in rationale[:2]:

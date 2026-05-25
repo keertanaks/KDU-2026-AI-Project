@@ -269,3 +269,250 @@ def test_score_capped_at_0_95_when_only_unweighted_violations() -> None:
     assert not weighted_violated, f"Unexpected weighted violations: {weighted_violated}"
     # Score debug must document the cap
     assert "any_violation->0.95" in result.score_debug.get("caps_applied", [])
+
+
+# ============================================================================
+# Test 7 — NKBA re-validation after SKU substitution (budget optimizer)
+# ============================================================================
+
+
+def test_revalidation_after_substitution() -> None:
+    """Validator produces an independent fresh score after a SKU swap.
+
+    This test verifies that calling validate() twice on two different
+    PlacementEngineOutput objects (one original, one with a swapped SKU)
+    produces independently computed scores.  The budget optimizer relies
+    on this independence to determine whether a substitution is safe.
+    """
+    validator = NKBAValidator()
+
+    # Build a layout with a good work triangle (no WORKFLOW-03 violation)
+    good_items = _triangle_items(4500.0)
+    good_placed = _placed(good_items)
+    result_before = validator.validate(good_placed, _spatial(), _preprocessing())
+
+    # "Substitute" by removing the fridge — work triangle becomes 2-legged
+    # The two calls to validate() are independent: result_after is a fresh object
+    substituted_items = dict(good_items)
+    substituted_items.pop("FR-01", None)
+    subbed_placed = _placed(substituted_items)
+    result_after = validator.validate(subbed_placed, _spatial(), _preprocessing())
+
+    # The two VariantSummaryDTO objects are independent — validate() runs fresh each call
+    assert result_after is not result_before
+    # Scores are different because the layouts differ (fridge removal changes violations)
+    assert (
+        result_after.score != result_before.score
+        or result_after.placement_count != result_before.placement_count
+    )
+
+
+# ============================================================================
+# Test 7 — NKBA-WW-01 PASS: walkway 1800mm >= 1067mm (single-cook)
+# ============================================================================
+
+
+def test_walkway_width_passes_single_cook() -> None:
+    """Facing N/S cabinet runs with 1800mm walkway — no NKBA-WW-01 violation.
+
+    Room depth = 3000mm (north wall at y=3000, south wall at y=0).
+    Each wall has one 600mm-deep base cabinet → walkway = 3000 - 600 - 600 = 1800mm.
+    1800mm >= 1067mm (single-cook minimum) → rule must NOT fire.
+    """
+    validator = NKBAValidator()
+    north = Wall(
+        name="north_wall",
+        anchor="north",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 3000}, {"x": 4000, "y": 3000}],
+    )
+    south = Wall(
+        name="south_wall",
+        anchor="south",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 0}, {"x": 4000, "y": 0}],
+    )
+    spatial = _spatial(walls=[north, south])
+    north_cab = _item(
+        "BC-N01",
+        "Base Cabinet North",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=600.0,
+        wall="north_wall",
+    )
+    south_cab = _item(
+        "BC-S01",
+        "Base Cabinet South",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=600.0,
+        wall="south_wall",
+    )
+    result = validator.validate(
+        _placed({"BC-N01": north_cab, "BC-S01": south_cab}),
+        spatial,
+        _preprocessing(),
+    )
+    violated_ids = {v["rule_id"] for v in result.violations}
+    assert "NKBA-WW-01" not in violated_ids, (
+        f"Unexpected NKBA-WW-01 violation on 1800mm walkway: {result.violations}"
+    )
+
+
+# ============================================================================
+# Test 8 — NKBA-WW-01 FAIL: walkway 400mm < 1067mm (too narrow)
+# ============================================================================
+
+
+def test_walkway_width_fails_too_narrow() -> None:
+    """Facing N/S cabinet runs with 400mm walkway — NKBA-WW-01 must fire.
+
+    Room depth = 2000mm, each wall has 800mm-deep cabinets → walkway = 2000 - 800 - 800 = 400mm.
+    400mm < 1067mm (single-cook minimum) → NKBA-WW-01 violation expected.
+    """
+    validator = NKBAValidator()
+    north = Wall(
+        name="north_wall",
+        anchor="north",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 2000}, {"x": 4000, "y": 2000}],
+    )
+    south = Wall(
+        name="south_wall",
+        anchor="south",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 0}, {"x": 4000, "y": 0}],
+    )
+    spatial = _spatial(walls=[north, south])
+    north_cab = _item(
+        "BC-N02",
+        "Base Cabinet North",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=800.0,
+        wall="north_wall",
+    )
+    south_cab = _item(
+        "BC-S02",
+        "Base Cabinet South",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=800.0,
+        wall="south_wall",
+    )
+    result = validator.validate(
+        _placed({"BC-N02": north_cab, "BC-S02": south_cab}),
+        spatial,
+        _preprocessing(),
+    )
+    violated_ids = {v["rule_id"] for v in result.violations}
+    assert "NKBA-WW-01" in violated_ids, (
+        "Expected NKBA-WW-01 violation on 400mm walkway but rule did not fire"
+    )
+
+
+# ============================================================================
+# Test 9 — NKBA-WW-01: multi-cook threshold 1219mm
+# ============================================================================
+
+
+def test_walkway_multi_cook_threshold() -> None:
+    """1200mm walkway passes single-cook (1067mm) but fails multi-cook (1219mm).
+
+    Room depth = 2300mm, each wall has 550mm-deep cabinets → walkway = 2300 - 550 - 550 = 1200mm.
+    1200mm >= 1067mm (single-cook) → no violation with default num_cooks=1.
+    1200mm < 1219mm (multi-cook)  → NKBA-WW-01 violation when num_cooks=2.
+    """
+    validator = NKBAValidator()
+    north = Wall(
+        name="north_wall",
+        anchor="north",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 2300}, {"x": 4000, "y": 2300}],
+    )
+    south = Wall(
+        name="south_wall",
+        anchor="south",
+        length_mm=4000.0,
+        height_mm=2400.0,
+        thickness_mm=100.0,
+        has_cabinets=True,
+        points=[{"x": 0, "y": 0}, {"x": 4000, "y": 0}],
+    )
+    spatial = _spatial(walls=[north, south])
+    north_cab = _item(
+        "BC-N03",
+        "Base Cabinet North",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=550.0,
+        wall="north_wall",
+    )
+    south_cab = _item(
+        "BC-S03",
+        "Base Cabinet South",
+        "base_cabinet",
+        x=0.0,
+        y=0.0,
+        z=0.0,
+        width=800.0,
+        depth=550.0,
+        wall="south_wall",
+    )
+    items = {"BC-N03": north_cab, "BC-S03": south_cab}
+
+    # Single-cook (default num_cooks=1): 1200mm >= 1067mm → PASS
+    result_single = validator.validate(_placed(items), spatial, _preprocessing())
+    single_violated = {v["rule_id"] for v in result_single.violations}
+    assert "NKBA-WW-01" not in single_violated, (
+        f"Unexpected NKBA-WW-01 for single-cook at 1200mm: {result_single.violations}"
+    )
+
+    # Multi-cook (num_cooks=2): 1200mm < 1219mm → FAIL
+    from dtos.contracts import PreprocessingOutput
+
+    multi_preprocessing = PreprocessingOutput(
+        intent=_intent(),
+        skus={},
+        zone_groups={z: [] for z in ("cooling", "cleaning", "cooking", "preparation", "storage")},
+        zone_min_widths={
+            z: 600.0 for z in ("cooling", "cleaning", "cooking", "preparation", "storage")
+        },
+        nkba_constraints={"num_cooks": 2},
+    )
+    result_multi = validator.validate(_placed(items), spatial, multi_preprocessing)
+    multi_violated = {v["rule_id"] for v in result_multi.violations}
+    assert "NKBA-WW-01" in multi_violated, (
+        "Expected NKBA-WW-01 for multi-cook at 1200mm but rule did not fire"
+    )

@@ -1,190 +1,146 @@
-# AGENTS.md — Agent Specifications
-## Auto-Design System | Project 2
+# AGENTS.md — Kitchen-Layout-Visualizer Harness
+## Harness v1.0.0 | 2026-05-24 | Router — do not inline skills here
 
 ---
 
-## Coding Standards for All Agents
+## Project Overview
 
-Before writing any agent file read `CODING_STANDARDS.md`. Agent-specific rules:
+A 5-layer kitchen layout generation pipeline (Spatial Engine → Preprocessing → Zone Planner →
+Placement Engine → Output) orchestrated by LangGraph, fronted by Streamlit, backed by an MCP
+catalog server and NKBA constraint validation. Produces 3–5 differentiated layout variants with
+NKBA compliance scores and rendered PNGs from a single room-specification JSON.
 
-1. **Never hard-code model strings.** Use `from utils.model_selector import for_agent`.
-   ```python
-   model = for_agent("prompt_parser")       # → "claude-haiku-4-5"
-   model = for_agent("layout_strategist")   # → "claude-sonnet-4-6"
-   model = for_agent("layout_strategist", is_retry=True)  # → "claude-opus-4-7"
-   ```
+## Architecture
 
-2. **Every API call is wrapped in try/except.** On failure return an empty valid DTO — never raise.
-
-3. **All agents use prompt caching** on their static system message:
-   ```python
-   {"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}
-   ```
-
-4. **All agents use `tool_choice`** for structured output — never parse free text from the model.
-
-5. **Agents are plain Python classes** — not services, not daemons, not separate processes.
-   LangGraph calls them as normal async functions. They only know about their own input/output DTOs.
-
-6. **Full type annotations required.** Use `from __future__ import annotations`.
-
-7. **Logging:** `from utils.logger import get_logger` — `logger = get_logger(__name__)`.
-
----
-
-## Agent 1 — Prompt Parser
-**File:** `agents/prompt_parser.py`
-**Model:** `claude-haiku-4-5`
-**Type:** Sequential (runs once per request)
-**Input:** Raw user prompt string + input JSON preferences
-**Output:** `IntentDTO` (structured JSON via tool_choice)
-
-### Rules
-- NEVER return `valid: false` — always extract best effort
-- If nothing found → return nulls, use input JSON defaults
-- NEVER block generation under any circumstances
-- Extract kitchen parts only, log non-kitchen requests in `"ignored"`
-- Always use `tool_choice` for structured JSON output
-
-### System Prompt Core
 ```
-ROLE:    Kitchen design intent extractor
-TASK:    Extract structured information from user prompt
-RULES:   Never return valid:false — always extract best effort
-         If nothing found → return nulls, use input JSON defaults
-         Never block generation under any circumstances
-         Extract kitchen parts only, log non-kitchen requests in "ignored"
-OUTPUT:  Strict JSON schema via tool_choice
+input.json → Layer 1 (spatial_engine.py) → Layer 2 (preprocessor.py: Agent1 + MCP + Agent2)
+           → Layer 3 (zone_planner.py: Agent3 ×3–5 parallel)
+           → Layer 4 (placement_engine.py ×3–5 parallel)
+           → NKBA Validator (nkba_validator.py) ×3–5 parallel
+           → Layer 5 (output_generator.py + render.py) ×3–5 parallel
+           → output.json + PNGs → Streamlit UI (ui/app.py)
 ```
 
-### Output Schema
-```json
-{
-  "color_keyword": "navy blue | null",
-  "color_hex": "#1F3A5F | null",
-  "layout_family": "L | U | I | null",
-  "style": "modern | traditional | minimalist | null",
-  "cabinet_preference": "base_only | with_uppers | with_tall | null",
-  "special_requests": ["island", "pantry"],
-  "ignored": ["AC", "TV"]
-}
+Sequential: Layer 1 → Layer 2. Parallel per-variant: Layers 3, 4, Validator, Output.
+
+---
+
+## Repo Structure
+
+```
+agents/           Agent 1–3 (plain Python classes; no services)
+pipeline/         5 pipeline layer modules (pure math or LLM wrappers)
+graph/            kitchen_graph.py — LangGraph StateGraph wiring
+dtos/             contracts.py — all typed DTOs (single source of truth)
+mcp_server/       server.py + catalog_loader.py + color_resolver.py
+ui/               app.py + components/ (display only — no business logic)
+utils/            logger.py, model_selector.py, openrouter_compat.py, rationale_lookup.py
+llmops/           tracing, cost tracking, routing analytics, guardrails
+tests/            unit/ (pure math) + integration/ (real API) + fixtures/
+openspec/specs/   00_dtos.md … 10_streamlit_ui.md (per-module OpenAPI specs)
+evals/harness/    Markdown eval cases (separate from evals/evaluators/ Python evals)
+skills/           12 skill files — read BEFORE writing any code
+templates/        3 spec templates — fill BEFORE writing any code
+features/active/  per-feature work folders created during feature development
+commands/         long-form workflow playbooks
+.claude/commands/ slash-command mirrors (use inside Claude Code)
+.claude/agents/   sub-agent definitions for isolated context tasks
+review/           PR review agent + architecture, test, safety checklists
+decisions/        MADR architecture decision records
+docs/harness/     glossary, anti-patterns, context budgets, how-to guides
+harness/          CHANGELOG.md (semver the harness itself)
 ```
 
-### Prompt Caching
-Cache: system prompt + NKBA rule list (static across requests)
-Do NOT cache: user input (unique per request)
+---
+
+## New-Feature Workflow (12 Steps — do not skip)
+
+1. Read this file (AGENTS.md)
+2. Understand the architecture above and relevant `openspec/specs/` files
+3. Create `features/active/<feature-name>/`
+4. Copy and fill all three templates (`templates/01-product-spec-template.md`, `02-technical-spec-template.md`, `03-implementation-plan-template.md`)
+5. Identify relevant skills (see Skill Glossary below)
+6. Read every relevant skill file in `skills/` — verify `last_verified` date
+7. Create the implementation plan — do NOT write code until it is complete
+8. Build the feature following existing project conventions (CODING_STANDARDS.md)
+9. Run tests: `pytest tests/unit/ -v` then `pytest tests/integration/ -v -m integration`
+10. Review the implementation against this harness (`commands/review-implementation.md`)
+11. Fill `result-notes.md` if the work came from an `evals/harness/` case
+12. Sharpen skills if the harness failed to guide correctly (`commands/sharpen-skill.md`)
+
+**Always fill templates BEFORE writing any code.**
+**Always read relevant skill files BEFORE writing any code.**
+**Use `commands/` for repeatable workflows. Use `review/` for PR and implementation review.**
+**Use `.claude/commands/` slash commands inside Claude Code.**
 
 ---
 
-## Agent 2 — Catalog Selector
-**File:** `agents/catalog_selector.py`
-**Model:** `claude-haiku-4-5`
-**Type:** Sequential (runs once, results shared across all variants)
-**Input:** `IntentDTO` + MCP tools
-**Output:** `PreprocessingOutput` (skus, zone_groups, zone_min_widths, nkba_constraints)
+## Skill Glossary (12 skills — read the file, not this line)
 
-### Rules
-- NEVER invent a SKU — only use what MCP returns
-- MCP runs ONCE — results cached for all variants
-- Group selected SKUs by zone type
-- Calculate zone_min_widths from SKU dimensions
-- Include relevant NKBA constraints per zone
-
-### MCP Tools Available
-| Tool | Purpose |
-|------|---------|
-| `get_catalog_items()` | List all SKUs |
-| `get_skus_by_category(category)` | Filter by type |
-| `get_sku_dimensions(sku_id)` | width_mm, depth_mm, height_mm |
-| `get_sku_constraints(sku_id)` | front_clearance_mm, needs_water, needs_power |
-| `get_skus_by_price_tier(tier)` | Filter by low/mid/high |
-| `get_skus_by_style(style)` | Filter by modern/traditional/minimalist |
-| `resolve_color(keyword)` | keyword → hex → catalog match |
-| `validate_placement(sku_id, wall_length_mm)` | Fit + NKBA check |
-| `check_clearance(sku_id, adjacent_items)` | front_clearance_mm check |
-
-### Prompt Caching
-Cache: system prompt + full catalog JSON (largest cache, biggest saving)
+| Skill | File | When to Read |
+|-------|------|--------------|
+| catalog | `skills/catalog.md` | Any SKU retrieval, price/cost, catalog query |
+| color-resolution | `skills/color-resolution.md` | Any color keyword, hex, or material matching |
+| layout-typology | `skills/layout-typology.md` | L/U/I/island shape selection, variant seeding |
+| constraint-validation | `skills/constraint-validation.md` | NKBA rules, scoring, work triangle, clearances |
+| variant-generation | `skills/variant-generation.md` | Parallel variants, seeds, retry, spillover |
+| continuous-run | `skills/continuous-run.md` | Cabinet flush, gap detection, corner handling |
+| rendering | `skills/rendering.md` | render.py/layout.py output, PlacedItem schema |
+| langgraph-workflow | `skills/langgraph-workflow.md` | Graph nodes, edges, state, retry wiring |
+| dto-contracts | `skills/dto-contracts.md` | DTO reuse, KitchenGraphState changes |
+| testing-strategy | `skills/testing-strategy.md` | Unit/integration split, fixtures, coverage |
+| ui-integration | `skills/ui-integration.md` | Streamlit components, business logic boundary |
+| llm-routing-and-observability | `skills/llm-routing-and-observability.md` | Model routing, logging, llmops/ |
 
 ---
 
-## Agent 3 — Layout Strategist
-**File:** `agents/layout_strategist.py`
-**Model:** `claude-sonnet-4-6` primary / `claude-opus-4-7` on retry
-**Type:** Parallel × 3–5 variants
-**Input:** `SpatialEngineOutput` + `PreprocessingOutput` + variant seed suffix
-**Output:** `ZonePlannerOutput` (variant_id, family, wall_strategies, zone_assignments)
+## Non-Negotiable Rules
 
-### HARD CONSTRAINT
-**Agent 3 MUST NEVER output coordinates, mm values, or any numbers.**
-**Output is semantic only — using ONLY the vocabulary below.**
+- Never hard-code model strings — use `utils/model_selector.py`
+- Never use `print()` — use `utils/logger.py` (`get_logger(__name__)`)
+- Never modify `catalog.json`, `render.py`, or `layout.py` without a `decisions/` ADR
+- Never bypass DTOs, MCP server, NKBA validator, graph wiring, or logger
+- Business logic must NOT live in Streamlit UI components (`ui/`)
+- Every generated variant MUST pass `nkba_validator.py` before being returned
+- Never invent SKUs — only use what `mcp_server/server.py` returns
+- Agent 3 outputs SEMANTIC vocabulary only — never mm coordinates
+- All Claude API calls must be wrapped in `try/except` returning a valid fallback DTO
+- Run `ruff format . && ruff check . && mypy .` before every commit
 
-### Valid Semantic Vocabulary
-| Term | Meaning |
-|------|---------|
-| `"at north-west corner"` | x=0, y=wall_depth |
-| `"at north-east corner"` | x=wall_length-item_width, y=wall_depth |
-| `"at south-west corner"` | x=0, y=0 |
-| `"at south-east corner"` | x=wall_length-item_width, y=0 |
-| `"near {wall} window"` | x=window_center ± item_width/2 |
-| `"centre of {wall}"` | x=(wall_length-item_width)/2 |
-| `"left end of {wall}"` | x=0 (start of first free segment) |
-| `"right end of {wall}"` | x=wall_length-item_width |
-| `"next to {item_name}"` | immediately adjacent, no gap |
-| `"above {item_name}"` | z=item.z+item.height, same x/y |
-| `"leave gap before {item_name}"` | 600mm buffer before item |
+## Repo-Specific Architectural Rules
 
-Unrecognised term → fall back to `"left end of {wall}"`, log warning.
+- `dtos/contracts.py` is the contract layer — extend it, never duplicate elsewhere
+- `graph/kitchen_graph.py` wires all nodes — no pipeline logic outside the graph
+- `mcp_server/server.py` is the ONLY entry point to `catalog.json`
+- `pipeline/nkba_validator.py` is the ONLY place NKBA scoring runs
+- `utils/rationale_lookup.py` drives rationale text — no LLM rationale calls
+- WORKFLOW-03 minimum is 3962mm (13 ft) — not 3600mm
+- Variant seeds are fixed per CLAUDE.md table — never invent new seeds ad hoc
 
-### Placement Strategy Rules
-- Fridge and tall cabinets ALWAYS at corners/ends
-- Sink near window if window exists on that wall
-- Dishwasher next to sink (expressed as `"next to sink"`)
-- Hood above stove (expressed as `"above stove"`)
-- Stove ≥ 600mm from fridge (expressed as `"leave gap before fridge"`)
+## Testing & Eval Expectations
 
-### Variant Seeds
-| Variant | Injected Suffix |
-|---------|----------------|
-| 1 | "Prefer L-shape. Maximise counter run on the longest wall. Fridge at far end." |
-| 2 | "Prefer U-shape. Close the work triangle tightly. Dishwasher opposite the sink wall." |
-| 3 | "Prefer I-shape or island. Minimise total cabinet cost. Use narrower SKUs where possible." |
-| 4 | "Maximise storage. Prioritise tall cabinets and wall cabinets over base units." |
-| 5 | "Accessibility focus. Maximise aisle widths. No tall cabinets blocking circulation." |
+- Unit tests go in `tests/unit/` — pure math, no API calls, no mocks for math
+- Integration tests go in `tests/integration/` — real API, marked `@pytest.mark.integration`
+- Fixtures live in `tests/fixtures/sample_inputs.py` — no fake SKUs inline in tests
+- Every new NKBA rule needs a unit test in `tests/unit/test_nkba_validator.py`
+- Harness Markdown evals live in `evals/harness/` — separate from Python evals
 
-### Retry Trigger (LangGraph conditional edge)
-Retry if: score < 0.60 OR WORKFLOW-03 violated OR NKBA-CL-01 violated
-On retry: Agent 3 receives violation list as context → re-plans with `claude-opus-4-7`
-If retry also fails: keep variant, mark `warnings[]`, do NOT drop variant
+## Context-Budget Reminder
 
-### Prompt Caching
-Cache: system prompt + room geometry template
-Do NOT cache: variant-specific seed suffix or violation context
+- This file: ≤200 lines — never inline a skill body here, always point
+- Each skill body (excl. frontmatter): ≤1000 tokens
+- Each checklist: ≤80 lines
+- Each filled template: ≤200 lines
 
 ---
 
-## Agent 4 — Rationale Writer
-**File:** `agents/rationale_writer.py`
-**Model:** `claude-haiku-4-5`
-**Type:** Parallel × variants (runs after NKBA scoring)
-**Input:** `PlacementEngineOutput` + NKBA validation result + IntentDTO
-**Output:** `rationale[]` array — each entry has `rule_id` and `text`
+## References
 
-### Rules
-- Reference NKBA rule IDs explicitly (e.g., LAYOUT-01, WORKFLOW-03)
-- Confirm color match to prompt, flag violations in plain English
-- Keep each rationale entry to 1–2 sentences
-- Always run even if violations exist — explain them, don't hide them
-
-### Output Schema
-```json
-[
-  {"rule_id": "LAYOUT-01", "text": "Sink centred under north window (delta=0mm)"},
-  {"rule_id": "COLOR-MATCH", "text": "SKU-C11 (#1F3A5F) selected for navy blue prompt"},
-  {"rule_id": "WORKFLOW-03", "text": "Work triangle perimeter: 4200mm (within 3962–6600mm)"}
-]
-```
-
-### Prompt Caching
-Cache: system prompt + rationale templates
-Do NOT cache: placement result or violations (unique per variant)
+- `AGENT_SPECS.md` — legacy Agent 1–4 runtime specifications
+- `CLAUDE.md` — architecture, LangGraph state, variant seeds, scoring formula
+- `CODING_STANDARDS.md` — type hints, error handling, module size, DTO rules
+- `openspec/specs/` — per-module OpenAPI/prose specs (00_dtos.md … 10_streamlit_ui.md)
+- `docs/harness/glossary.md` — NKBA terms, semantic vocabulary, zone/scoring reference
+- `docs/harness/anti-patterns.md` — known failure modes and their fixes
+- `docs/harness/context-budget.md` — hard limits enforced at PR review
+- `docs/harness/fresh-chat-starter.md` — copy-paste bootstrap for new chat sessions
