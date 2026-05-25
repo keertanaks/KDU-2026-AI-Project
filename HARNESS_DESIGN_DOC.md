@@ -1,5 +1,5 @@
 # Harness Design Document
-## Cyncly Auto-Design System — Kitchen 
+## Cyncly Auto-Design System — Kitchen Layout Visualiser
 ---
 
 ## PR Link:
@@ -33,7 +33,7 @@ https://github.com/keertanaks/KDU-2026-AI-Project/pull/21
 
 This document describes the design, architecture, and rationale for the AI coding harness built for the **Cyncly Auto-Design System** (Kitchen Layout Visualizer). The harness encodes every architecture decision, coding convention, domain rule, and workflow step so that a fresh Claude Code or Cursor session can extend the project correctly — without back-and-forth, without invented conventions, and without violating protected constraints.
 
-**The harness is proven to work.** In a live eval run, a fresh Claude Code session took a single-paragraph feature request (NKBA walkway width constraint) and:
+**The harness has been validated on 3 representative eval cases — including one high-complexity case (9 skills, 6+ files) — with zero rule violations after a pre-eval coherence audit.** In one eval run, a fresh Claude Code session took a single-paragraph feature request (NKBA walkway width constraint) and:
 - Created the feature folder and filled all three templates before writing a single line of code
 - Read 4 relevant skill files and identified the right 4 files to touch
 - Implemented the feature with zero violations of any rule
@@ -41,6 +41,8 @@ This document describes the design, architecture, and rationale for the AI codin
 - Passed all 38 unit tests with zero regressions
 
 **Zero human intervention was required after the initial prompt.**
+
+> **Scope:** This document covers the harness design only. It does not document the full Cyncly product implementation except where project architecture affects harness rules. The linked PR (see top of document) contains the harness files, skills, templates, eval cases, supporting docs, and all implementation changes described here. This repository uses `AGENTS.md` as the harness master file.
 
 ---
 
@@ -80,7 +82,7 @@ A harness **is**:
 - A **workflow enforcer** — defining the sequence of steps that must happen before any code is written
 - A **failure-mode library** — capturing every mistake the coding tool has made before, so it doesn't repeat them
 
-The key insight from Scott's Eliza harness: **over-constrain on purpose.** The whole point is removing the coding tool's freedom to be creative in areas where you want predictability. A harness trades creativity for correctness.
+The key insight from Eliza harness: **over-constrain on purpose.** The whole point is removing the coding tool's freedom to be creative in areas where you want predictability. A harness trades creativity for correctness.
 
 ---
 
@@ -188,7 +190,7 @@ AGENTS.md is a 118-line file at the repo root. It is the **first thing** any fre
 | Context budget | 5 | Token limits for skills, templates, checklists |
 | References | 10 | Links to CLAUDE.md, CODING_STANDARDS.md, openspec/ |
 
-**Total: 118 lines.** Well under the 300-line ceiling recommended by Scott.
+**Total: 118 lines.** Well under the 300-line ceiling 
 
 ### Design Decision: Router Pattern
 
@@ -328,7 +330,7 @@ The most important skill in the harness. It encodes the single most common and m
 
 ### Design Philosophy
 
-As Scott said: *"Your harness is code. Run evals on it."*
+*"Your harness is code. Run evals on it."*
 
 The eval pattern is: give a fresh coding session a realistic feature request and compare what it produces against a hand-written expected output. If it matches, the harness works. If it diverges, you know exactly which skill or rule is missing.
 
@@ -352,6 +354,19 @@ Each eval case folder contains:
 
 The brief asks for 3–5. Six were built because each case stresses a different combination of skills. Cases 1 and 4 are intentionally hard (9 skills, multi-layer graph changes). Cases 3 and 5 are intentionally small (1–2 files). This spread catches both breadth failures (missing a skill entirely) and depth failures (a skill that's too shallow to cover edge cases).
 
+### Pass/Fail Criteria
+
+An eval **passes** only if all of the following are true:
+1. The coding session followed the 12-step workflow (templates before code)
+2. It read the expected skill files — no invented conventions
+3. It produced all expected files and modified only intended files
+4. Protected files (`render.py`, `layout.py`, `catalog.json`) were untouched
+5. Required unit tests were written and pass
+6. Zero non-negotiable rule violations (no hardcoded model strings, no print(), etc.)
+7. No back-and-forth — session ran end-to-end without human correction
+
+If any one of these fails, the eval is a **fail** and the relevant skill is sharpened before the next run.
+
 ### Eval Hygiene Rules
 
 - **Always fresh chat** — no existing thread, no accumulated context
@@ -359,6 +374,8 @@ The brief asks for 3–5. Six were built because each case stresses a different 
 - **Compare to expected.md** — not to intuition
 - **Fill result-notes.md** — even on pass (to capture what worked and why)
 - **Sharpen the skill immediately** — on failure, update the skill the same day
+
+> **No post-eval harness failures occurred in the three passing runs.** However, the pre-eval coherence audit (section 11) found seven harness defects, all fixed before eval execution. This is the recommended approach: audit the harness before running evals, not after.
 
 ---
 
@@ -387,7 +404,7 @@ Step 12: Sharpen skills if the harness failed to guide correctly
 
 ## 11. Proof of Concept — Eval Results (3/3 PASS)
 
-**Total: 3 eval cases run. All 3 passed. Brief required minimum 2/5.**
+**Total: 3 eval cases run out of 6 defined cases. All 3 passed. This exceeds the minimum requirement of 2 passing evals.**
 
 | Case | Feature Built | Tests | Rules Violated | Human Interventions |
 |---|---|---|---|---|
@@ -457,7 +474,7 @@ Before running any eval, the harness was subjected to a coherence audit that ide
 
 ### Post-Eval Observations
 
-**case-01 (Budget Optimizer):** One test assertion was logically incorrect (`assert score_after <= score_before` — wrong assumption that removing a fridge always lowers score). Fixed by correcting the assertion logic to test independence of re-validation, not score direction. This was a test writing error, not a harness guidance failure.
+**case-01 (Budget Optimizer):** One test assertion was logically incorrect (`assert score_after <= score_before` — wrong assumption that removing a fridge always lowers score). The assertion was corrected during the same eval session to test re-validation independence rather than score direction, after which the suite passed 55/55. This was a test-design issue, not a harness-guidance failure. No harness skill needed updating as a result.
 
 **All 3 evals:** The session read `AGENT_SPECS.md` (legacy file) instead of `AGENTS.md` (harness master) in case-01 first step. Despite this, all conventions, skills, and rules were followed correctly because the skills + CLAUDE.md provided sufficient context. **Harness improvement identified:** Add explicit disambiguation note to AGENTS.md: "Do not confuse with AGENT_SPECS.md — that is the legacy runtime spec."
 
@@ -620,7 +637,7 @@ This turns the Markdown eval cases into a CI-runnable test suite — the harness
 
 ### v2.1 — Case Coverage Expansion
 
-Run all 6 eval cases and sharpen skills based on findings. Target: 6/6 cases passing. Current status: 1/6 confirmed pass (case-03). Cases 01 and 04 (high complexity) are the priority.
+Run remaining 3 eval cases and sharpen skills based on findings. Target: 6/6 cases passing. Current status: 3/6 confirmed pass (case-01, case-03, case-05). Remaining priority: case-04 (accessibility agent — new LLM call, tests llm-routing skill), case-02 (style transfer), case-06 (export report).
 
 ---
 
@@ -668,6 +685,3 @@ Run all 6 eval cases and sharpen skills based on findings. Target: 6/6 cases pas
 High-risk skills are read first when they appear in the relevant skill list and are flagged for priority review on every drift check.
 
 ---
-
-*Harness v1.0.0 — Built 2026-05-24 — Kitchen-Layout-Visualizer / Cyncly Auto-Design System*  
-*"Your harness is code. Version it. Review changes. Run evals on it." — Scott*
