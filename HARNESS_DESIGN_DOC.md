@@ -20,7 +20,7 @@ https://github.com/keertanaks/KDU-2026-AI-Project/pull/21
 8. [Component 3: skills/ — The Reusable Instructions](#8-component-3-skills--the-reusable-instructions)
 9. [Component 4: evals/ — Proof It Works](#9-component-4-evals--proof-it-works)
 10. [The 12-Step Workflow](#10-the-12-step-workflow)
-11. [Proof of Concept — Case-03 Eval Results](#11-proof-of-concept--case-03-eval-results)
+11. [Proof of Concept — Eval Results (3/3 PASS)](#11-proof-of-concept--eval-results-33-pass)
 12. [Design Decisions and Trade-offs](#12-design-decisions-and-trade-offs)
 13. [Lessons Learned](#13-lessons-learned)
 14. [How to Use This Harness](#14-how-to-use-this-harness)
@@ -190,7 +190,7 @@ AGENTS.md is a 118-line file at the repo root. It is the **first thing** any fre
 | Context budget | 5 | Token limits for skills, templates, checklists |
 | References | 10 | Links to CLAUDE.md, CODING_STANDARDS.md, openspec/ |
 
-**Total: 118 lines.** Well under the 300-line ceiling 
+**Total: 118 lines.** Well under the 300-line ceiling.
 
 ### Design Decision: Router Pattern
 
@@ -350,9 +350,9 @@ Each eval case folder contains:
 - **expected.md** — files to create, skills to read, rules to respect, tests to write, forbidden mistakes
 - **result-notes.md** — pass/fail findings, rules violated, skills that need sharpening
 
-### Why 6 Cases (Not 3–5)
+### Why 6 Cases
 
-The brief asks for 3–5. Six were built because each case stresses a different combination of skills. Cases 1 and 4 are intentionally hard (9 skills, multi-layer graph changes). Cases 3 and 5 are intentionally small (1–2 files). This spread catches both breadth failures (missing a skill entirely) and depth failures (a skill that's too shallow to cover edge cases).
+Six cases were defined to ensure breadth of skill coverage — each case stresses a different combination of skills. Cases 1 and 4 are intentionally hard (9 skills, multi-layer graph changes). Cases 3 and 5 are intentionally small (1–2 files). This spread catches both breadth failures (missing a skill entirely) and depth failures (a skill that's too shallow to cover edge cases). Three of the six were run and confirmed passing before submission; the remaining three are defined and ready to execute.
 
 ### Pass/Fail Criteria
 
@@ -416,7 +416,7 @@ Step 12: Sharpen skills if the harness failed to guide correctly
 
 ### Case-03 Deep Dive — Walkway Constraint
 
-**Date:** 2026-05-24  
+**Date:** 2026-05-24
 **Tool:** Claude Code (claude-sonnet-4-6) via /run-eval skill  
 **Case:** case-03-walkway-constraint — Add NKBA-WW-01 minimum walkway width rule
 
@@ -474,7 +474,7 @@ Before running any eval, the harness was subjected to a coherence audit that ide
 
 ### Post-Eval Observations
 
-**case-01 (Budget Optimizer):** One test assertion was logically incorrect (`assert score_after <= score_before` — wrong assumption that removing a fridge always lowers score). The assertion was corrected during the same eval session to test re-validation independence rather than score direction, after which the suite passed 55/55. This was a test-design issue, not a harness-guidance failure. No harness skill needed updating as a result.
+**case-01 (Budget Optimizer):** One test assertion was logically incorrect (`assert score_after <= score_before` — wrong assumption that removing a fridge always lowers score). The coding tool identified and corrected this autonomously within the same eval session, revising the assertion to test re-validation independence rather than score direction, after which the suite passed 55/55. This was a test-design issue, not a harness-guidance failure. No harness skill needed updating as a result.
 
 **All 3 evals:** The session read `AGENT_SPECS.md` (legacy file) instead of `AGENTS.md` (harness master) in case-01 first step. Despite this, all conventions, skills, and rules were followed correctly because the skills + CLAUDE.md provided sufficient context. **Harness improvement identified:** Add explicit disambiguation note to AGENTS.md: "Do not confuse with AGENT_SPECS.md — that is the legacy runtime spec."
 
