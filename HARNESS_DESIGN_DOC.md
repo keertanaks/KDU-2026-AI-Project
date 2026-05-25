@@ -291,6 +291,23 @@ tool_risk: low | medium | high
 ## Completion Checklist  ← Checkbox list to verify before marking done
 ```
 
+### Individual Skill Breakdown — Why Each Exists and What Failure It Prevents
+
+| Skill | Why It Exists | Key Failure Mode Without It | Key Rule Enforced |
+|---|---|---|---|
+| `catalog.md` | Coding tools default to reading catalog.json directly — bypassing the MCP abstraction layer entirely | Direct `json.load("catalog.json")` call, breaking the server abstraction | Never read catalog.json — only call `mcp_server/server.py` |
+| `color-resolution.md` | Color matching has a 3-step fallback chain (exact → hex → nearest). Without guidance, tools either crash on unknown keywords or silently return None | `KeyError` on unknown color keyword, or returning a hex with no real SKU backing | Unknown keywords must return nearest match with `nearest_match: True` flag; always verify against real SKU |
+| `layout-typology.md` | The 5 variant seeds are fixed in CLAUDE.md. Without the skill, tools invent new seeds ad hoc, breaking differentiation logic | Adding a 6th variant seed that duplicates an existing strategy | Seeds are fixed — use the table exactly, never invent new ones |
+| `constraint-validation.md` | WORKFLOW-03 minimum is 3962mm (13 ft) — not 3600mm — and tools consistently pull the wrong value from training data | `WORK_TRIANGLE_MIN_MM = 3600.0` (wrong by 362mm) | Every new rule needs: rule ID, RULE_WEIGHTS entry, check function, rationale entry, unit test |
+| `variant-generation.md` | Parallel variant generation uses `asyncio.gather`. Without the skill, tools write sequential loops, destroying the performance model | `for variant in variants: result = await zone_planner.run(...)` — sequential instead of parallel | All per-variant work runs via `asyncio.gather` — never sequential |
+| `continuous-run.md` | Cabinet run continuity (no gaps > 50mm) is a physical constraint that must survive SKU substitution. Without the skill, substitution logic ignores it | Substituting a 600mm cabinet with a 400mm one, creating a 200mm gap that fails LAYOUT-03 | Z-level filtering separates floor vs wall items; gap > 50mm triggers LAYOUT-03 violation |
+| `rendering.md` | `render.py` and `layout.py` are client-provided protected files. Without the skill, tools try to modify them to fix rendering issues | Editing `render.py` to change coordinate output format | Never modify `render.py` or `layout.py` — output must conform to their existing schema |
+| `langgraph-workflow.md` | LangGraph wiring is non-obvious. New nodes must be registered in `kitchen_graph.py` — tools commonly write the module but forget to wire it in | New pipeline module written but never added as a graph node → runs in isolation | Every new pipeline step must be a registered graph node; `KitchenGraphState` changes go in `dtos/contracts.py` first |
+| `dto-contracts.md` | DTOs are the contract layer. Tools frequently duplicate DTO fields inline in modules rather than extending `contracts.py` | Defining `budget_estimate: float` directly in a pipeline module instead of in `BudgetEstimateDTO` | DTOs live only in `dtos/contracts.py` — never duplicated elsewhere |
+| `testing-strategy.md` | Unit tests and integration tests have strict placement rules. Fixtures cannot use invented SKUs. Without the skill, tests end up in wrong directories with fake data | `SAMPLE_SKU = {"id": "FAKE-01", "price_tier": "low"}` inline in a test file | Unit tests in `tests/unit/`, integration in `tests/integration/`; fixtures in `tests/fixtures/sample_inputs.py` |
+| `ui-integration.md` | Streamlit makes it easy to put business logic in UI components. Without the skill, tools add calculation logic directly to `ui/app.py` | Cost calculation inside `render_budget_panel()` Streamlit component | UI components display only — no business logic, no pipeline calls, no math |
+| `llm-routing-and-observability.md` | Three models (Haiku/Sonnet/Opus) are assigned to specific agents. Without the skill, tools hardcode model strings, breaking cost control | `client.messages.create(model="claude-opus-4-7", ...)` — always Opus, 10× cost | All model strings via `utils/model_selector.py`; all API calls in `try/except` returning valid fallback DTO |
+
 ### The YAML Frontmatter Decision
 
 Skills include YAML frontmatter with `version`, `last_verified`, and `applies_to` fields. This enables systematic drift detection: when a source file changes, the corresponding skill's `last_verified` date is checked against the file's last-modified date. If the skill is stale, a `drift-detector` sub-agent flags it for review before the next eval.
@@ -419,6 +436,30 @@ Without the `constraint-validation.md` skill, the coding tool would likely have:
 - Written only a pass test (no fail test, no edge case for multi-cook)
 
 The skill's explicit "Common Failure Modes" section blocked all four of these mistakes before they could happen.
+
+---
+
+### Pre-Eval Harness Improvements (Coherence Audit)
+
+Before running any eval, the harness was subjected to a coherence audit that identified 7 failures. All were fixed before evals ran:
+
+| Failure | What Was Wrong | Fix Applied |
+|---|---|---|
+| FAIL 1 | `should_use_opus(state)` stale signature in 2 skills | Updated to `should_use_opus(score, violation_ids)` in both skills; bumped to v1.0.1 |
+| FAIL 2 | Implementation plan template had no sign-off gate | Added Step 13 "STOP" gate with 4-checkbox verification |
+| FAIL 3 | Eval prompt length spec ambiguous | Clarified: prompts are 1–4 paragraphs (realistic feature requests) |
+| FAIL 4 | Fresh-chat-starter spec ambiguous | Clarified: starter is ~150 lines (appropriate for session bootstrap) |
+| FAIL 5 | Fresh chat requirement not documented in eval command | Added "Fresh Chat Required" section to commands/run-harness-eval.md |
+| FAIL 6 | File protection via settings.json deny list | Schema incompatible with file paths — protection moved to CLAUDE.md + checklists |
+| FAIL 7 | llmops/ referenced in skill but not in repo | Removed all llmops/ references from llm-routing-and-observability.md |
+
+**Result:** All 3 subsequent evals passed with zero rule violations. The pre-eval audit was essential — it caught structural harness problems before they could cause eval failures.
+
+### Post-Eval Observations
+
+**case-01 (Budget Optimizer):** One test assertion was logically incorrect (`assert score_after <= score_before` — wrong assumption that removing a fridge always lowers score). Fixed by correcting the assertion logic to test independence of re-validation, not score direction. This was a test writing error, not a harness guidance failure.
+
+**All 3 evals:** The session read `AGENT_SPECS.md` (legacy file) instead of `AGENTS.md` (harness master) in case-01 first step. Despite this, all conventions, skills, and rules were followed correctly because the skills + CLAUDE.md provided sufficient context. **Harness improvement identified:** Add explicit disambiguation note to AGENTS.md: "Do not confuse with AGENT_SPECS.md — that is the legacy runtime spec."
 
 ---
 
