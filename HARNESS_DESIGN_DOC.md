@@ -1,11 +1,12 @@
 # Harness Design Document
-## Cyncly Auto-Design System — Kitchen Layout Visualizer
-**Author:** Keertana S · Kickdrum Technology  
-**Date:** 2026-05-24  
-**Harness Version:** 1.0.0  
-**Project Type:** Kickdrum Product — AI Harness  
+## Cyncly Auto-Design System — Kitchen 
+---
+
+##PR Link:
+https://github.com/keertanaks/KDU-2026-AI-Project/pull/21
 
 ---
+
 
 ## Table of Contents
 
@@ -367,7 +368,19 @@ Step 12: Sharpen skills if the harness failed to guide correctly
 
 ---
 
-## 11. Proof of Concept — Case-03 Eval Results
+## 11. Proof of Concept — Eval Results (3/3 PASS)
+
+**Total: 3 eval cases run. All 3 passed. Brief required minimum 2/5.**
+
+| Case | Feature Built | Tests | Rules Violated | Human Interventions |
+|---|---|---|---|---|
+| case-03 walkway-constraint | NKBA-WW-01 walkway width rule | 38/38 ✅ | 0 | 0 |
+| case-01 budget-optimizer | Estimated budget + SKU substitution | 55/55 ✅ | 0 | 0 |
+| case-05 color-fallback | Graceful fallback for unknown color keywords | 83/83 ✅ | 0 | 0 |
+
+---
+
+### Case-03 Deep Dive — Walkway Constraint
 
 **Date:** 2026-05-24  
 **Tool:** Claude Code (claude-sonnet-4-6) via /run-eval skill  
