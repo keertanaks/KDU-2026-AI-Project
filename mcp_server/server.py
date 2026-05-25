@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from mcp_server.catalog_loader import get_catalog
-from mcp_server.color_resolver import keyword_to_hex, match_catalog_color
+from mcp_server.color_resolver import match_catalog_color, resolve_color_keyword
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +114,21 @@ def get_skus_by_style(style: str) -> list[dict[str, Any]]:
 
 
 def resolve_color(keyword: str) -> dict[str, Any]:
-    """Convert color keyword to hex and return nearest catalog match."""
+    """Convert color keyword to hex and return nearest catalog match.
+
+    Returns a dict with:
+    - ``hex``: resolved 6-char hex (no #)
+    - ``matched_sku``: catalog SKU ID of closest color match (or None)
+    - ``delta_e``: CIE76 distance to matched SKU (or None)
+    - ``nearest_match``: True when the keyword was not found exactly in the
+      color table and a substitution was made — callers should warn the user.
+    """
     catalog = _get_catalog()
     try:
-        hex_code = keyword_to_hex(keyword)
+        resolution = resolve_color_keyword(keyword)
+        hex_code = resolution.hex_code
+        nearest_match = not resolution.exact_match
+
         match = match_catalog_color(hex_code, catalog)
         if match:
             matched_sku_id, distance = match
@@ -125,16 +136,18 @@ def resolve_color(keyword: str) -> dict[str, Any]:
                 "hex": hex_code,
                 "matched_sku": matched_sku_id,
                 "delta_e": round(distance, 2),
+                "nearest_match": nearest_match,
             }
         else:
             return {
                 "hex": hex_code,
                 "matched_sku": None,
                 "delta_e": None,
+                "nearest_match": nearest_match,
                 "reason": "No catalog color within tolerance",
             }
     except Exception as e:
-        logger.error(f"Color resolution failed: {e}")
+        logger.error("Color resolution failed: %s", e)
         return {"error": f"Color resolution failed: {e}"}
 
 
@@ -152,6 +165,54 @@ def validate_placement(sku_id: str, wall_length_mm: int) -> dict[str, Any]:
         }
 
     return {"fits": True, "reason": "SKU fits in wall"}
+
+
+def get_substitute_skus(
+    category: str,
+    max_tier: str,
+    width_mm: float,
+    width_tolerance_mm: float = 50.0,
+) -> list[dict[str, Any]]:
+    """Return catalog SKUs of the given category at or below max_tier whose
+    width is within ±width_tolerance_mm of the target width.
+
+    Used by pipeline/budget_optimizer.py to find cheaper, dimension-compatible
+    substitutes without reading catalog.json directly.
+
+    Args:
+        category: SKU category string (e.g., "base_cabinet", "refrigerator").
+        max_tier: Highest acceptable price tier ("low" | "mid" | "high").
+            A "low" max_tier only returns "low" items.
+            A "mid" max_tier returns "low" and "mid" items.
+        width_mm: Target width of the item being replaced (mm).
+        width_tolerance_mm: Max width deviation accepted (default 50mm = LAYOUT-03 gap limit).
+
+    Returns:
+        List of SKU dicts matching the constraints, sorted by width closeness.
+    """
+    _TIER_ORDER: dict[str, int] = {"low": 0, "mid": 1, "high": 2}
+    max_rank = _TIER_ORDER.get(max_tier.lower(), 2)
+
+    catalog = _get_catalog()
+    category_lower = category.lower()
+
+    candidates = [
+        _sku_to_dict(sku_id, sku_data)
+        for sku_id, sku_data in catalog.items()
+        if (
+            sku_data["category"] == category_lower
+            and _TIER_ORDER.get(sku_data["price_tier"].lower(), 2) <= max_rank
+            and abs(sku_data["width_mm"] - width_mm) <= width_tolerance_mm
+        )
+    ]
+    # Sort by width closeness first, then by tier (cheapest first)
+    candidates.sort(
+        key=lambda s: (
+            abs(s["width_mm"] - width_mm),
+            _TIER_ORDER.get(s["price_tier"].lower(), 2),
+        )
+    )
+    return candidates
 
 
 def check_clearance(sku_id: str, adjacent_items: list[str]) -> dict[str, Any]:

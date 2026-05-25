@@ -90,6 +90,79 @@ class PlacedItem:
     zone_type: str
 
 
+# ============================================================================
+# Budget Optimisation DTOs
+# ============================================================================
+
+
+@dataclass
+class BudgetItemEstimate:
+    """Estimated cost for one placed SKU.
+
+    NOTE: These are ESTIMATES using a static price map — not real retail prices.
+    Always surface this data with the label "Estimated Cost" in any UI or output.
+    """
+
+    sku_id: str
+    name: str
+    category: str
+    price_tier: str  # "low" | "mid" | "high"
+    estimated_cost_gbp: float  # Estimated Cost — not a real price
+
+
+@dataclass
+class BudgetEstimateDTO:
+    """Total estimated cost for one layout variant.
+
+    All figures are estimates derived from the ESTIMATED_PRICE_MAP constant in
+    pipeline/budget_optimizer.py. Never claim these as real prices.
+    """
+
+    variant_id: str
+    total_estimated_cost_gbp: float  # Estimated Cost — sum of item estimates
+    items: list[BudgetItemEstimate]
+    currency: str = "USD"
+
+
+@dataclass
+class SubstitutionDTO:
+    """One accepted SKU swap: original (higher-tier) → substitute (lower-tier).
+
+    Produced by pipeline/budget_optimizer.py after continuity and NKBA checks pass.
+    """
+
+    original_sku_id: str
+    substitute_sku_id: str
+    original_tier: str
+    substitute_tier: str
+    original_cost_gbp: float  # Estimated Cost of original SKU
+    substitute_cost_gbp: float  # Estimated Cost of substitute SKU
+    cost_delta_gbp: float  # negative = savings (Estimated)
+    color_preserved: bool
+    continuity_ok: bool
+    nkba_score_before: float
+    nkba_score_after: float
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BudgetOptimizationDTO:
+    """Result of budget optimisation for one variant.
+
+    Carried as an optional field on VariantSummaryDTO so downstream consumers
+    (UI, output generator) can access it without changing the core pipeline flow.
+    """
+
+    variant_id: str
+    target_budget_gbp: float | None  # None → no target, estimation only
+    original_estimate: BudgetEstimateDTO
+    optimized_estimate: BudgetEstimateDTO | None  # None → no substitutions made
+    substitutions: list[SubstitutionDTO]
+    within_budget: bool
+    nkba_score_delta: float
+    warnings: list[str] = field(default_factory=list)
+
+
 @dataclass
 class IntentDTO:
     """Parsed user preferences from input JSON."""
@@ -141,6 +214,10 @@ class PreprocessingOutput:
     zone_groups: dict[str, list[SKU]]
     zone_min_widths: dict[str, float]
     nkba_constraints: dict[str, Any]
+    # Human-readable warnings generated when a color keyword had no exact catalog
+    # match and a nearest-color substitution was made.  Empty list = no substitution.
+    # Merged into VariantSummaryDTO.warnings[] by pipeline/nkba_validator.py.
+    color_warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -194,6 +271,9 @@ class VariantSummaryDTO:
     environment: dict[str, Any]
     collision_pairs: list[dict[str, Any]] = field(default_factory=list)
     score_debug: dict[str, Any] = field(default_factory=dict)
+    # Budget optimisation result — None when no budget target or feature disabled.
+    # All cost figures inside are Estimated Cost (not real prices).
+    budget_optimization: BudgetOptimizationDTO | None = None
 
 
 @dataclass
@@ -221,3 +301,6 @@ class KitchenGraphState(TypedDict):
     validated_variants: list[VariantSummaryDTO]
     retry_context: dict[str, list[str]]
     final_output: FinalOutput
+    # Optional numeric budget target (USD). Populated from
+    # input_json["preferences"]["budget_target_gbp"] in the graph run() method.
+    budget_target_gbp: float | None

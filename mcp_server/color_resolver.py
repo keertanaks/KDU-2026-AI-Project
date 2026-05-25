@@ -7,6 +7,7 @@ then matches against catalog colors using CIE76 delta-E distance in Lab color sp
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from utils.logger import get_logger
@@ -70,10 +71,85 @@ _COLOR_TABLE: dict[str, str] = {
 _FALLBACK_HEX = "808080"
 
 
+@dataclass
+class ColorResolution:
+    """Result of resolving a color keyword to a hex code.
+
+    Carries metadata about match quality so callers can decide whether to
+    warn the user that a substitution was made.
+    """
+
+    hex_code: str
+    """6-char uppercase hex WITHOUT '#' (e.g. '9CA3AF')."""
+
+    exact_match: bool
+    """True only if the keyword was an exact key in _COLOR_TABLE."""
+
+    matched_keyword: str
+    """The _COLOR_TABLE key that was actually used.
+    Empty string when no match was found and _FALLBACK_HEX was used.
+    """
+
+
+def resolve_color_keyword(keyword: str) -> ColorResolution:
+    """Resolve a color keyword with metadata about match quality.
+
+    Checks in order:
+    1. Exact key in ``_COLOR_TABLE`` → ``exact_match=True``
+    2. Prefix / substring match    → ``exact_match=False``
+    3. No match at all             → ``exact_match=False``, uses ``_FALLBACK_HEX``
+
+    Never raises. Always returns a ``ColorResolution`` with a valid 6-char hex.
+
+    Args:
+        keyword: Color description supplied by the user (any case, any spacing).
+
+    Returns:
+        ``ColorResolution`` with ``hex_code``, ``exact_match``, and ``matched_keyword``.
+    """
+    key = keyword.strip().lower()
+
+    # 1. Exact match
+    if key in _COLOR_TABLE:
+        logger.debug("Exact color match '%s' → #%s", keyword, _COLOR_TABLE[key])
+        return ColorResolution(
+            hex_code=_COLOR_TABLE[key],
+            exact_match=True,
+            matched_keyword=key,
+        )
+
+    # 2. Prefix / substring match (same logic as the original keyword_to_hex)
+    for table_key, table_hex in _COLOR_TABLE.items():
+        if table_key in key or key in table_key:
+            logger.debug(
+                "Partial color match '%s' → #%s (via table key '%s')",
+                keyword,
+                table_hex,
+                table_key,
+            )
+            return ColorResolution(
+                hex_code=table_hex,
+                exact_match=False,
+                matched_keyword=table_key,
+            )
+
+    # 3. No match — neutral fallback
+    logger.warning(
+        "Unknown color keyword '%s' — no table match; falling back to #%s",
+        keyword,
+        _FALLBACK_HEX,
+    )
+    return ColorResolution(
+        hex_code=_FALLBACK_HEX,
+        exact_match=False,
+        matched_keyword="",
+    )
+
+
 def keyword_to_hex(keyword: str) -> str:
     """Convert natural language color keyword to 6-char uppercase hex.
 
-    Uses a static lookup table — zero LLM calls, zero cost, deterministic.
+    Delegates to ``resolve_color_keyword()`` — zero LLM calls, zero cost, deterministic.
     Falls back to neutral grey if keyword is not in the table.
 
     Args:
@@ -82,26 +158,7 @@ def keyword_to_hex(keyword: str) -> str:
     Returns:
         6-char uppercase hex code without # (e.g., "1F3A5F")
     """
-    key = keyword.strip().lower()
-    hex_code = _COLOR_TABLE.get(key)
-
-    if hex_code:
-        logger.debug("Resolved color '%s' → #%s (lookup table)", keyword, hex_code)
-        return hex_code
-
-    # Try prefix match for compound names like "dark sage green"
-    for table_key, table_hex in _COLOR_TABLE.items():
-        if table_key in key or key in table_key:
-            logger.debug(
-                "Resolved color '%s' → #%s (partial match on '%s')",
-                keyword,
-                table_hex,
-                table_key,
-            )
-            return table_hex
-
-    logger.warning("Unknown color keyword '%s' — falling back to #%s", keyword, _FALLBACK_HEX)
-    return _FALLBACK_HEX
+    return resolve_color_keyword(keyword).hex_code
 
 
 def _hex_to_lab(hex_color: str) -> tuple[float, float, float]:

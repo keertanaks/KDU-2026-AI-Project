@@ -18,6 +18,7 @@ ALL_RULES: list[tuple[str, str, float]] = [
     ("LAYOUT-04", "Base cabinet coverage -- every appliance backed by base cab", 0.08),
     ("LAYOUT-05", "Mandatory base -- run terminates at base/corner", 0.07),
     ("LAYOUT-06", "Fridge at corner -- fridge + tall at corners/ends", 0.06),
+    ("NKBA-WW-01", "Walkway width -- >=1067mm single-cook, >=1219mm multi-cook", 0.10),
     ("NKBA-01", "Kitchen entry clear opening >=813mm", 0.0),
     ("NKBA-02", "Appliance door interference -- doors must not collide", 0.0),
     ("NKBA-03", "Work triangle total <=7925mm maximum perimeter", 0.0),

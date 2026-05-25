@@ -8,7 +8,7 @@ from typing import Any
 import anthropic
 
 from dtos.contracts import SKU, IntentDTO, PreprocessingOutput, SpatialEngineOutput
-from mcp_server.color_resolver import delta_e
+from mcp_server.color_resolver import delta_e, match_catalog_color, resolve_color_keyword
 from utils.logger import get_logger
 from utils.model_selector import for_agent
 
@@ -111,6 +111,10 @@ class CatalogSelector:
         """
         model = for_agent("catalog_selector")
 
+        # Detect color substitution before any filtering so the warning is
+        # available even if the LLM call or catalog lookup later fails.
+        color_warnings: list[str] = self._build_color_warnings(intent)
+
         try:
             filtered = self._filter_catalog(intent)
             filtered = self._filter_layout_unsuitable(filtered, spatial_output, intent)
@@ -174,11 +178,49 @@ class CatalogSelector:
                 zone_groups=zone_groups,
                 zone_min_widths=zone_min_widths,
                 nkba_constraints=nkba_constraints,
+                color_warnings=color_warnings,
             )
 
         except Exception as e:
             logger.error("Agent 2 selection failed: %s — returning fallback", e)
-            return self._fallback_output(intent)
+            return self._fallback_output(intent, color_warnings=color_warnings)
+
+    # ------------------------------------------------------------------ #
+    # Color warning                                                        #
+    # ------------------------------------------------------------------ #
+
+    def _build_color_warnings(self, intent: IntentDTO) -> list[str]:
+        """Return a warning list if the user's color keyword had no exact match.
+
+        Calls ``resolve_color_keyword()`` to check match quality, then finds the
+        nearest catalog SKU so the warning names a real SKU (no invented IDs).
+        Returns an empty list when the keyword was an exact match or absent.
+        """
+        if not intent.color_keyword:
+            return []
+
+        resolution = resolve_color_keyword(intent.color_keyword)
+        if resolution.exact_match:
+            return []
+
+        # Find the best matching catalog SKU for the warning message
+        best = match_catalog_color(resolution.hex_code, self._catalog)
+        if best:
+            sku_id, _ = best
+            sku_name = self._catalog[sku_id].get("name", sku_id)
+            warning = (
+                f"Requested color '{intent.color_keyword}' not available — "
+                f"using nearest match: {sku_name} (#{resolution.hex_code}) "
+                f"SKU: {sku_id}"
+            )
+        else:
+            warning = (
+                f"Requested color '{intent.color_keyword}' not available — "
+                f"no catalog color match found; using fallback #{resolution.hex_code}"
+            )
+
+        logger.warning("Color substitution: %s", warning)
+        return [warning]
 
     # ------------------------------------------------------------------ #
     # Filtering                                                            #
@@ -610,6 +652,7 @@ class CatalogSelector:
             if category_kw in avoid_kw:
                 continue
             check_kws = [category_kw, *BASELINE_ALIASES.get(category_kw, [])]
+
             # For wall_cabinet: corner wall cabs don't count — need at least one regular wall cab
             def _is_regular(s: SKU, kws: list[str]) -> bool:
                 if not any(kw in s.category.lower() or kw in s.name.lower() for kw in kws):
@@ -993,7 +1036,11 @@ class CatalogSelector:
     # Fallback                                                             #
     # ------------------------------------------------------------------ #
 
-    def _fallback_output(self, intent: IntentDTO) -> PreprocessingOutput:
+    def _fallback_output(
+        self,
+        intent: IntentDTO,
+        color_warnings: list[str] | None = None,
+    ) -> PreprocessingOutput:
         """Return valid empty PreprocessingOutput on any failure."""
         return PreprocessingOutput(
             intent=intent,
@@ -1013,4 +1060,5 @@ class CatalogSelector:
                 "storage": FALLBACK_STORAGE_WIDTH_MM,
             },
             nkba_constraints={},
+            color_warnings=color_warnings or [],
         )

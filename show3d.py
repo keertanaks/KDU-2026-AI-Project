@@ -11,11 +11,12 @@ import json
 import sys
 
 import matplotlib
-matplotlib.use("TkAgg")          # interactive backend — must be before pyplot import
-import matplotlib.pyplot as plt  # noqa: E402
+
+matplotlib.use("TkAgg")  # interactive backend — must be before pyplot import
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, ".")
-from layout import LayoutVisualizer  # noqa: E402
+from layout import LayoutVisualizer
 
 
 def main() -> None:
@@ -60,7 +61,7 @@ def main() -> None:
             pass
         plt.tight_layout()
 
-    plt.show()   # single blocking call — all variant windows open together
+    plt.show()  # single blocking call — all variant windows open together
 
 
 if __name__ == "__main__":

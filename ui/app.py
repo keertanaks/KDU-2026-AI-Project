@@ -19,12 +19,14 @@ from dotenv import load_dotenv
 load_dotenv(_REPO_ROOT / ".env", override=True)
 
 import streamlit as st
+from components.budget_display import render_budget_panel
 from components.nkba_checklist import RULE_WEIGHTS, render_nkba_checklist
 from components.pipeline_log import run_pipeline_with_log
 from components.room_picker import render_room_picker
 from components.variant_card import render_variant_card, score_badge, zone_pills_html
 
 from utils.logger import get_logger
+
 try:
     from llmops.guardrails import run_all_guardrails
 except ModuleNotFoundError:
@@ -154,6 +156,17 @@ with st.sidebar:
         placeholder="e.g. I want navy blue cabinets with an island",
     )
     budget = st.radio("Budget", ["Low", "Mid", "High"], horizontal=True, index=1)
+    budget_target = st.number_input(
+        "Budget target ($, optional)",
+        min_value=0,
+        value=0,
+        step=500,
+        help=(
+            "Enter a target budget in USD (e.g., 15000 for $15,000). "
+            "Leave at 0 for cost estimation only. "
+            "All costs shown are Estimated Cost — not real retail prices."
+        ),
+    )
     must_have = st.multiselect(
         "Must include", ["Dishwasher", "Hood", "Island", "Oven", "Microwave"]
     )
@@ -178,6 +191,8 @@ if generate and input_json:
     input_json["preferences"]["budget_tier"] = budget.lower()
     input_json["preferences"]["must_have"] = [x.lower().replace(" ", "_") for x in must_have]
     input_json["preferences"]["avoid"] = [x.lower().replace(" ", "_") for x in avoid]
+    # Budget target: store as float or None (0 treated as "not set")
+    input_json["preferences"]["budget_target_gbp"] = float(budget_target) if budget_target else None
     result = run_pipeline_with_log(input_json)
     if result is not None:
         st.session_state["result"] = result
@@ -214,6 +229,7 @@ with tab1:
         layouts = _get(result, "layouts")
         for i, v in enumerate(layouts):
             render_variant_card(v, i)
+            render_budget_panel(v)
 
 # ============================================================================
 # Tab 2 — Designer View
@@ -442,9 +458,7 @@ with tab4:
         st.divider()
         with st.expander("🛡️ Guardrail Report", expanded=False):
             _stored_input: dict[str, Any] | None = st.session_state.get("input_json")
-            _output_for_guard: dict[str, Any] | None = (
-                result if isinstance(result, dict) else None
-            )
+            _output_for_guard: dict[str, Any] | None = result if isinstance(result, dict) else None
 
             if run_all_guardrails is None:
                 st.info("Guardrail module not available.")

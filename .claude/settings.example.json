@@ -1,0 +1,28 @@
+{
+  "_comment_hooks": "Hooks are intentionally NOT configured in v1. See decisions/0002-hooks-deferred.md for the v2 plan.",
+  "_comment_deny": "Files listed here must never be edited by automated tools. Enforced by advisory deny-list in v1; blocking hooks planned for v2.",
+
+  "permissions": {
+    "deny": [
+      "render.py",
+      "layout.py",
+      "catalog.json",
+      "input1.json",
+      "input2.json",
+      "input3.json",
+      "output.json",
+      "latest_run.json",
+      "CLAUDE.md",
+      "CODING_STANDARDS.md",
+      "IMPLEMENTATION_PLAN.md",
+      "System_Design_and_Learnings.md",
+      "AGENT_SPECS.md"
+    ],
+    "allow": [
+      "Bash(ruff format .)",
+      "Bash(ruff check .)",
+      "Bash(mypy .)",
+      "Bash(pytest tests/unit/)"
+    ]
+  }
+}
