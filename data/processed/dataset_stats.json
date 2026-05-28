@@ -1,0 +1,26 @@
+{
+  "_note": "Placeholder. Run notebooks/p3_01_data_prep.ipynb on Kaggle to populate with real values.",
+  "dataset": "ade-benchmark-corpus/ade_corpus_v2",
+  "configs_used": [
+    "Ade_corpus_v2_classification",
+    "Ade_corpus_v2_drug_ade_relation",
+    "Ade_corpus_v2_drug_dosage_relation"
+  ],
+  "raw_row_counts": {
+    "classification": "FILL_AFTER_RUN",
+    "drug_ade_relation": "FILL_AFTER_RUN",
+    "drug_dosage_relation": "FILL_AFTER_RUN"
+  },
+  "text_length_approx_tokens": {
+    "mean": "FILL_AFTER_RUN",
+    "median": "FILL_AFTER_RUN",
+    "p95": "FILL_AFTER_RUN",
+    "max": "FILL_AFTER_RUN"
+  },
+  "split_row_counts": {
+    "train": "FILL_AFTER_RUN",
+    "val": "FILL_AFTER_RUN",
+    "test": "FILL_AFTER_RUN"
+  },
+  "seed": 42
+}
