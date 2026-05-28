@@ -1,0 +1,49 @@
+{
+  "failed_questions": [
+    {
+      "doc_type": "unanswerable",
+      "expected_doc_ids": [],
+      "id": "q019",
+      "latency_ms": 6661,
+      "reason": "unanswerable_returned_results",
+      "retrieved_doc_ids": [
+        "140f303f-a5ee-449c-b058-f944a385b94e"
+      ]
+    },
+    {
+      "doc_type": "unanswerable",
+      "expected_doc_ids": [],
+      "id": "q020",
+      "latency_ms": 7556,
+      "reason": "unanswerable_returned_results",
+      "retrieved_doc_ids": [
+        "c8a8b160-f5d0-4c24-bb1f-f77bce01940e"
+      ]
+    }
+  ],
+  "generated_at": "2026-05-14T14:53:29.659761+00:00",
+  "metrics": {
+    "answerable_questions": 18,
+    "avg_latency_ms": 9169.65,
+    "failures_by_doc_type": {
+      "unanswerable": 2
+    },
+    "mrr": 1.0,
+    "p95_latency_ms": 11628.0,
+    "top_1_accuracy": 1.0,
+    "top_3_accuracy": 1.0,
+    "top_5_accuracy": 1.0,
+    "total_questions": 20,
+    "unanswerable_no_result_rate": 0.0,
+    "unanswerable_questions": 2,
+    "unanswerable_returned_result_count": 2
+  },
+  "run_config": {
+    "answer_generation": "disabled",
+    "embedding_provider": "local",
+    "external_evaluator_llm": "disabled",
+    "golden_path": "evaluation\\golden_set.jsonl",
+    "limit": null,
+    "opensearch_index": "healthcare_chunks_local"
+  }
+}
