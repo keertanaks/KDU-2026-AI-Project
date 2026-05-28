@@ -45,5 +45,14 @@ frontend/.vite/
 opensearch_data/
 postgres_data/
 
+# Project 3 — generated data files (large, regenerate from notebook)
+data/processed/*.jsonl
+data/processed/dataset_stats.json
+models/qwen2.5-7b/
+models/adapters/
+
+# Project 3 — Kaggle debug notebooks (never commit)
+notebooks/notebook*.ipynb
+
 # Alembic compiled
 alembic/__pycache__/
