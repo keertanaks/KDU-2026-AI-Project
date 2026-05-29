@@ -43,7 +43,8 @@ def _make_extractor_with_fake_model(generated_json: str) -> ClinicalExtractor:
     """
     ext = ClinicalExtractor(model=MagicMock(), tokenizer=MagicMock())
     # Bypass torch entirely by replacing _generate with a stub.
-    ext._generate = lambda text: generated_json  # type: ignore[assignment]
+    # _generate signature is (text, record_id="") since remote-mode support landed.
+    ext._generate = lambda text, record_id="": generated_json  # type: ignore[assignment]
     # _ensure_loaded is a no-op when model/tokenizer are already set.
     return ext
 
@@ -163,7 +164,7 @@ def test_extract_returns_empty_result_on_oom():
     """A CUDA OOM (or any RuntimeError) from .generate() must NOT propagate."""
     ext = ClinicalExtractor(model=MagicMock(), tokenizer=MagicMock())
 
-    def _boom(text):
+    def _boom(text, record_id=""):
         raise RuntimeError("CUDA out of memory")
 
     ext._generate = _boom  # type: ignore[assignment]
@@ -226,6 +227,117 @@ def test_adapter_version_when_disabled(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # No real model is ever loaded in this test file — sanity assert
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Remote-mode tests (EXTRACTION_REMOTE_URL)
+# ---------------------------------------------------------------------------
+
+
+def test_remote_mode_posts_to_endpoint_and_parses_response(monkeypatch):
+    """When EXTRACTION_REMOTE_URL is set, .extract() should HTTP POST and
+    flow the returned raw_output through validate_extraction.
+    """
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space")
+    payload = {
+        "schema_version": "v1",
+        "entities": [
+            {
+                "entity_type": "medication",
+                "mention": "aspirin",
+                "dosage": None,
+                "linked_medication": None,
+                "evidence": "started aspirin",
+                "source_span": {"start_char": 0, "end_char": 7},
+            }
+        ],
+        "relation_status": "not_related",
+    }
+    fake_response = MagicMock()
+    fake_response.json.return_value = {"raw_output": json.dumps(payload)}
+    fake_response.raise_for_status.return_value = None
+
+    with patch("requests.post", return_value=fake_response) as mock_post:
+        ext = ClinicalExtractor()
+        result = ext.extract("Pt started aspirin today.", record_id="remote_001")
+
+    # The remote endpoint URL must be constructed as <remote_url>/extract
+    args, kwargs = mock_post.call_args
+    assert args[0] == "https://fake.hf.space/extract"
+    assert kwargs["json"]["text"] == "Pt started aspirin today."
+    assert kwargs["json"]["record_id"] == "remote_001"
+
+    assert result.record_id == "remote_001"
+    assert len(result.entities) == 1
+    assert result.entities[0].mention == "aspirin"
+    assert result.validation.schema_valid is True
+    assert result.error_reason is None
+
+
+def test_remote_mode_strips_trailing_slash(monkeypatch):
+    """EXTRACTION_REMOTE_URL=https://x.hf.space/ should not produce //extract."""
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space/")
+    ext = ClinicalExtractor()
+    assert ext.remote_url == "https://fake.hf.space"
+
+
+def test_remote_mode_network_error_returns_extraction_error(monkeypatch):
+    """HTTP failures must not propagate — extract() should return empty result."""
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space")
+    import requests
+
+    with patch("requests.post", side_effect=requests.ConnectionError("connection refused")):
+        ext = ClinicalExtractor()
+        result = ext.extract("Pt on metformin.", record_id="remote_002")
+
+    assert result.error_reason == "extraction_error"
+    assert result.entities == []
+
+
+def test_remote_mode_malformed_response_returns_extraction_error(monkeypatch):
+    """A remote that returns {'something_else': ...} (no raw_output key) must not crash."""
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space")
+    fake_response = MagicMock()
+    fake_response.json.return_value = {"unexpected_shape": "yes"}
+    fake_response.raise_for_status.return_value = None
+
+    with patch("requests.post", return_value=fake_response):
+        ext = ClinicalExtractor()
+        result = ext.extract("Pt on metformin.", record_id="remote_003")
+
+    assert result.error_reason == "extraction_error"
+    assert result.entities == []
+
+
+def test_remote_mode_skips_local_model_load(monkeypatch):
+    """In remote mode, _ensure_loaded() must NOT be called — there's no local model to load."""
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space")
+    fake_response = MagicMock()
+    fake_response.json.return_value = {
+        "raw_output": json.dumps({"schema_version": "v1", "entities": [], "relation_status": "none"})
+    }
+    fake_response.raise_for_status.return_value = None
+
+    with patch("requests.post", return_value=fake_response), \
+         patch.object(ClinicalExtractor, "_ensure_loaded") as mock_load:
+        ext = ClinicalExtractor()
+        ext.extract("Pt healthy.", record_id="remote_004")
+
+    mock_load.assert_not_called()
+
+
+def test_adapter_version_in_remote_mode(monkeypatch):
+    """adapter_version() should prefix with 'remote:' when running in remote mode."""
+    monkeypatch.setenv("EXTRACTION_ENABLED", "true")
+    monkeypatch.setenv("EXTRACTION_REMOTE_URL", "https://fake.hf.space")
+    monkeypatch.setenv("EXTRACTION_ADAPTER_PATH", "models/adapters/lora_v1")
+    ext = ClinicalExtractor()
+    assert ext.adapter_version() == "remote:lora_v1"
+
+
+# ---------------------------------------------------------------------------
+# Module hygiene
 # ---------------------------------------------------------------------------
 
 

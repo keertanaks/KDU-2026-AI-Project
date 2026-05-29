@@ -24,12 +24,19 @@
 #
 # Environment variables (read once at first .get() call):
 #   EXTRACTION_ENABLED        ("true" | "false") default "true"
-#   EXTRACTION_BASE_MODEL     HuggingFace model id or local path
+#   EXTRACTION_REMOTE_URL     If set, run inference via HTTP POST to this URL
+#                             (e.g. a HuggingFace Space) instead of loading the
+#                             model locally. The remote endpoint must expose
+#                             POST /extract returning {"raw_output": "<str>"}.
+#                             default "" (= local mode)
+#   EXTRACTION_REMOTE_TIMEOUT Seconds to wait for a remote inference response.
+#                             default "120"
+#   EXTRACTION_BASE_MODEL     HuggingFace model id or local path (local mode only)
 #                             default "Qwen/Qwen2.5-7B-Instruct"
-#   EXTRACTION_ADAPTER_PATH   Local LoRA adapter directory
+#   EXTRACTION_ADAPTER_PATH   Local LoRA adapter directory (local mode only)
 #                             default "models/adapters/lora_v1"
 #   EXTRACTION_DEVICE         "auto" | "cpu" | "cuda" — passed to from_pretrained
-#                             default "auto"
+#                             (local mode only). default "auto"
 #   EXTRACTION_MAX_NEW_TOKENS Max tokens to generate per call (greedy decoding)
 #                             default "512"
 
@@ -90,6 +97,13 @@ class ClinicalExtractor:
         self.enabled: bool = (
             os.getenv("EXTRACTION_ENABLED", "true").lower() == "true"
         )
+        # Remote-mode toggle. When set, we POST to <remote_url>/extract instead
+        # of loading the 7B model in this process. Useful when the host has no
+        # GPU (Phase 6 demo path).
+        self.remote_url: str = os.getenv("EXTRACTION_REMOTE_URL", "").rstrip("/")
+        self.remote_timeout: float = float(
+            os.getenv("EXTRACTION_REMOTE_TIMEOUT", "120")
+        )
         self.base_model: str = os.getenv(
             "EXTRACTION_BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct"
         )
@@ -121,11 +135,16 @@ class ClinicalExtractor:
         """Identifier persisted to OpenSearch as ``extraction_model_version``.
 
         Returns the basename of the adapter directory (e.g. ``"lora_v1"``)
-        when extraction is enabled, otherwise ``"disabled"``.
+        when extraction is enabled, otherwise ``"disabled"``. In remote mode,
+        returns ``"remote:<basename>"`` so the index keeps provenance of
+        which deployment produced the field.
         """
         if not self.enabled:
             return "disabled"
-        return Path(self.adapter_path).name or self.adapter_path
+        local_name = Path(self.adapter_path).name or self.adapter_path
+        if self.remote_url:
+            return f"remote:{local_name}"
+        return local_name
 
     def extract(self, text: str, record_id: str) -> ExtractionResult:
         """Extract medications, adverse events, and their relation from ``text``.
@@ -151,14 +170,16 @@ class ClinicalExtractor:
         if not text or not text.strip():
             return build_empty_result(record_id, reason="empty_input")
 
-        try:
-            self._ensure_loaded()
-        except Exception as exc:  # noqa: BLE001 — never propagate to caller
-            logger.error("Extractor load failed: %s", exc, exc_info=True)
-            return build_empty_result(record_id, reason="model_load_failed")
+        # Remote mode skips local model load entirely.
+        if not self.remote_url:
+            try:
+                self._ensure_loaded()
+            except Exception as exc:  # noqa: BLE001 — never propagate to caller
+                logger.error("Extractor load failed: %s", exc, exc_info=True)
+                return build_empty_result(record_id, reason="model_load_failed")
 
         try:
-            raw = self._generate(text)
+            raw = self._generate(text, record_id=record_id)
         except Exception as exc:  # noqa: BLE001 — never propagate to caller
             logger.error(
                 "Extractor inference failed for record %s: %s", record_id, exc,
@@ -213,8 +234,41 @@ class ClinicalExtractor:
         self._tokenizer = tokenizer
         logger.info("Extractor loaded.")
 
-    def _generate(self, text: str) -> str:
-        """Run a single greedy generation call. Returns raw decoded string.
+    def _generate(self, text: str, record_id: str = "") -> str:
+        """Dispatch to local or remote generation based on EXTRACTION_REMOTE_URL.
+
+        Returns the raw decoded string (no parsing yet — validate_extraction
+        does that downstream).
+        """
+        if self.remote_url:
+            return self._generate_remote(text, record_id=record_id)
+        return self._generate_local(text)
+
+    def _generate_remote(self, text: str, record_id: str = "") -> str:
+        """POST to the remote inference service (e.g. HuggingFace Space).
+
+        Raises on network / HTTP / shape errors so the caller's outer
+        try/except converts to ``error_reason="extraction_error"``.
+        """
+        import requests  # noqa: PLC0415 — deferred so module import stays light
+
+        endpoint = f"{self.remote_url}/extract"
+        resp = requests.post(
+            endpoint,
+            json={"text": text, "record_id": record_id},
+            timeout=self.remote_timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        raw = data.get("raw_output")
+        if not isinstance(raw, str):
+            raise ValueError(
+                f"Remote extractor at {endpoint} returned no raw_output string; got: {data!r}"
+            )
+        return raw
+
+    def _generate_local(self, text: str) -> str:
+        """Run a single greedy generation call against the locally-loaded model.
 
         Decoding config matches the training-time inference plan locked in
         CLAUDE.md (do_sample=False, temperature=0.0, repetition_penalty=1.05).

@@ -202,10 +202,87 @@ Environment variables (read at first extractor call, see top of
 | Variable | Default | Purpose |
 |---|---|---|
 | `EXTRACTION_ENABLED` | `"true"` | Master switch. Set to `"false"` to skip extraction entirely — useful during incident response or A/B comparison ingests. |
-| `EXTRACTION_BASE_MODEL` | `"Qwen/Qwen2.5-7B-Instruct"` | Base model id (HF) or local path. |
-| `EXTRACTION_ADAPTER_PATH` | `"models/adapters/lora_v1"` | LoRA adapter directory. Swap to roll out a new adapter — no code change needed. |
-| `EXTRACTION_DEVICE` | `"auto"` | `"auto"` / `"cpu"` / `"cuda"`. Passed to `from_pretrained(device_map=…)`. |
+| `EXTRACTION_REMOTE_URL` | `""` (= local) | If set, POST to `<url>/extract` instead of loading the model in-process. See §8.1 for deployment topology. |
+| `EXTRACTION_REMOTE_TIMEOUT` | `"120"` | HTTP timeout (seconds) for remote-mode inference. |
+| `EXTRACTION_BASE_MODEL` | `"Qwen/Qwen2.5-7B-Instruct"` | Base model id (HF) or local path. Local mode only. |
+| `EXTRACTION_ADAPTER_PATH` | `"models/adapters/lora_v1"` | LoRA adapter directory. Local mode only. Swap to roll out a new adapter — no code change needed. |
+| `EXTRACTION_DEVICE` | `"auto"` | `"auto"` / `"cpu"` / `"cuda"`. Passed to `from_pretrained(device_map=…)`. Local mode only. |
 | `EXTRACTION_MAX_NEW_TOKENS` | `"512"` | Generation length cap. Should match what the model was trained to produce. |
+
+### 8.1 Local vs Remote Inference Topology
+
+The extractor supports two deployment modes that share the same downstream
+pipeline (validator → indexer → frontend). The only thing that changes is
+*where the GPU lives*.
+
+**Local mode (`EXTRACTION_REMOTE_URL` unset):**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Harmony host (FastAPI + OpenSearch + model on same box) │
+│                                                          │
+│  documents.py ─► ClinicalExtractor._generate_local() ──┐ │
+│                                                        ▼ │
+│                                Qwen2.5-7B + LoRA (FP16)  │
+└──────────────────────────────────────────────────────────┘
+```
+
+Requires a GPU on the Harmony host (~16 GB VRAM for FP16, ~9 GB for QLoRA).
+Lowest latency once warm; everything on one box.
+
+**Remote mode (`EXTRACTION_REMOTE_URL` set):**
+
+```
+┌──────────────────────────────────┐    ┌─────────────────────────────────┐
+│  Harmony host (FastAPI, OS, no   │    │  GPU host (HuggingFace Space,   │
+│  GPU required)                   │    │  Modal, RunPod, on-prem GPU)    │
+│                                  │    │                                 │
+│  documents.py                    │    │  POST /extract                  │
+│   └─► ClinicalExtractor          │    │   └─► Qwen2.5-7B + LoRA         │
+│        ._generate_remote() ──────┼───►│        (4-bit on free CPU       │
+│             requests.post()      │    │         tier or FP16 on T4)     │
+│        ◄─────────────────────────┼────┤        returns raw_output       │
+│        validate_extraction()     │    │                                 │
+│        → ExtractionResult        │    │                                 │
+└──────────────────────────────────┘    └─────────────────────────────────┘
+```
+
+When to choose remote:
+
+- Harmony host has no GPU (dev laptop, low-budget app server)
+- You want one inference deployment shared across multiple Harmony instances
+- The model is too large to fit on every API replica's hardware
+- You want to swap adapter versions independently of the app deployment
+
+When to choose local:
+
+- You control the host hardware and have a GPU
+- You can't accept the ~50–200 ms HTTP overhead per chunk
+- You can't allow chunk text to leave the host process (note: even
+  local-mode does NOT guarantee HIPAA — see §HIPAA below)
+
+**HIPAA / data exposure:** remote mode sends each chunk's text over HTTPS
+to the configured endpoint. Project 3 is "HIPAA-aware design, NOT certified."
+With synthetic / non-PHI demo data this is acceptable; with real PHI it is
+not. A production deployment routing real PHI must use a BAA-eligible
+inference host (AWS HIPAA-eligible services, Azure with BAA, on-prem GPU).
+The Harmony↔extractor interface is unchanged in either case.
+
+### 8.2 HuggingFace Space deployment reference
+
+For the demo / non-PHI path we ship a reference HF Space configuration in
+[`hf_space/`](../../hf_space) of this repo:
+
+- `app.py` — FastAPI wrapper exposing `POST /extract` and `GET /health`
+- `Dockerfile` — Python 3.10 + dependencies
+- `requirements.txt` — pinned transformers / peft / bitsandbytes versions
+  matching training-time
+- `README.md` — HF Space metadata (sdk=docker, hardware tier guidance)
+
+Deploy by pushing those four files to a new HF Space repo, set
+`ADAPTER_PATH` Space variable to your HF adapter repo, wait for the
+Docker build, then set `EXTRACTION_REMOTE_URL=https://<user>-<space>.hf.space`
+in Harmony's `config/.env`. Restart uvicorn — no code changes.
 
 ---
 
