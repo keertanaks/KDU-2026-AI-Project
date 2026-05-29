@@ -22,6 +22,7 @@ from app.ingestion.text_cleaner import TextCleaner
 from app.ingestion.chunker import AdaptiveChunker, ChunkDocType
 from app.ingestion.phi_tagger import PhiTagger
 from app.ingestion.embedder import Embedder
+from app.ingestion.extractor import ClinicalExtractor
 from app.ingestion.indexer import Indexer
 from app.ingestion.extraction_validator import ExtractionValidator
 from app.ingestion.layout_extractor import LayoutExtractor
@@ -42,6 +43,7 @@ _ocr = None
 _phi = None
 _embedder = None
 _indexer = None
+_extractor = None
 
 
 def _get_ocr():
@@ -71,6 +73,20 @@ def _get_indexer():
         _indexer = Indexer()
         _indexer.ensure_index()
     return _indexer
+
+
+def _get_extractor():
+    """Lazy singleton for the Project 3 clinical extractor.
+
+    Returns the same ClinicalExtractor instance for the lifetime of the process.
+    Model weights are only loaded on first .extract() call, not here — so the
+    first call after a fresh process may take ~30-60s while the LoRA adapter
+    materializes; subsequent calls are fast.
+    """
+    global _extractor
+    if _extractor is None:
+        _extractor = ClinicalExtractor.get()
+    return _extractor
 
 
 def _resolve_acl(request: Request) -> list:
@@ -326,12 +342,74 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
         embeddings = embedder.embed_batch(child_texts)
         mark_step("embed")
 
+        # --- Clinical structured extraction (Project 3) ----------------------
+        # Runs on the UNMASKED chunk text — source_span offsets stay valid
+        # against chunk.child_text (D-35). Per-chunk so the model sees a window
+        # within its training distribution (~256 tokens).
+        # extractor.extract() never raises: on any failure path it returns an
+        # ExtractionResult with all validation flags False and error_reason set,
+        # so the ingestion pipeline keeps running even if the LoRA adapter is
+        # absent, OOMs, or the model emits unparseable text.
+        extractor = _get_extractor()
+        chunk_extractions = []
+        for i, chunk in enumerate(chunks):
+            chunk_id = hashlib.sha256(f"{file_hash}:{i}".encode()).hexdigest()[:32]
+            result = extractor.extract(chunk.child_text, record_id=chunk_id)
+            chunk_extractions.append(result)
+        extraction_model_version = extractor.adapter_version()
+        mark_step("extract")
+
         # --- Build index documents -------------------------------------------
         acl = _resolve_acl(request)
         structured_fields_json = json.dumps(
             norm_result.get("structured_fields", {}), ensure_ascii=False
         )
         extraction_issues_json = json.dumps(raw_validation["issues"])
+
+        def _meds(result):
+            return [
+                {
+                    "mention": e.mention,
+                    "dosage": e.dosage,
+                    "evidence": e.evidence,
+                    "start_char": e.source_span.start_char,
+                    "end_char": e.source_span.end_char,
+                }
+                for e in result.entities
+                if e.entity_type == "medication"
+            ]
+
+        def _ades(result):
+            return [
+                {
+                    "mention": e.mention,
+                    "linked_medication": e.linked_medication,
+                    "evidence": e.evidence,
+                    "start_char": e.source_span.start_char,
+                    "end_char": e.source_span.end_char,
+                }
+                for e in result.entities
+                if e.entity_type == "adverse_event"
+            ]
+
+        def _relations(result):
+            # Build from ae.linked_medication — NOT the cartesian product of
+            # all medications × all adverse_events in the chunk. The model
+            # populates linked_medication on each ADE to indicate which drug
+            # it is tied to; a cartesian product would invent wrong pairs in
+            # any chunk containing multiple drugs or multiple ADEs.
+            if result.relation_status != "related":
+                return []
+            return [
+                {
+                    "drug": e.linked_medication,
+                    "adverse_event": e.mention,
+                    "status": "related",
+                    "evidence": e.evidence,
+                }
+                for e in result.entities
+                if e.entity_type == "adverse_event" and e.linked_medication
+            ]
 
         index_docs = [
             {
@@ -352,6 +430,11 @@ async def ingest_document(request: Request, file: UploadFile = File(...)):
                 "doc_type": str(doc_type.value),
                 "phi_spans": phi_spans_json,
                 "acl": acl,
+                # Project 3 — structured clinical extraction outputs
+                "medications": _meds(chunk_extractions[i]),
+                "adverse_events": _ades(chunk_extractions[i]),
+                "relations": _relations(chunk_extractions[i]),
+                "extraction_model_version": extraction_model_version,
             }
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
         ]
