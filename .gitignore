@@ -49,7 +49,8 @@ postgres_data/
 data/processed/*.jsonl
 data/processed/dataset_stats.json
 models/qwen2.5-7b/
-models/adapters/
+models/adapters/**/*.safetensors
+models/adapters/**/*.bin
 
 # Project 3 — Kaggle debug notebooks (never commit)
 notebooks/notebook*.ipynb

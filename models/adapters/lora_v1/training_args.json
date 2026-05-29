@@ -1,0 +1,28 @@
+{
+  "run_name": "lora_quickfinal_acct2",
+  "approach": "option_b_quickfinal",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "base_model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "learning_rate": 0.0002,
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "best_eval_loss": 0.011455,
+  "num_epochs": 1,
+  "max_seq_length": 600,
+  "per_device_train_batch_size": 2,
+  "gradient_accumulation_steps": 8,
+  "effective_batch_size": 16,
+  "optimizer": "adamw_torch",
+  "fp16": true,
+  "bf16": false,
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "lora_dropout": 0.05
+}
