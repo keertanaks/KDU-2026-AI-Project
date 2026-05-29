@@ -1,0 +1,42 @@
+{
+  "model": "lora",
+  "adapter_path": "/kaggle/input/datasets/b35keertanakscs105/harmony-lora-adapter",
+  "test_file": "/kaggle/input/datasets/b35keertanakscs105/harmony-ade-data/test.jsonl",
+  "n_examples": 2376,
+  "metrics": {
+    "json_valid_pre_repair": 1.0,
+    "json_valid_post_repair": 1.0,
+    "schema_valid": 1.0,
+    "drug_f1": 0.7978,
+    "drug_precision": 0.7794,
+    "drug_recall": 0.817,
+    "ade_f1": 0.5417,
+    "ade_precision": 0.5197,
+    "ade_recall": 0.5657,
+    "relation_f1": 0.6417,
+    "hallucination_rate": 0.0004,
+    "evidence_accuracy": 1.0,
+    "enum_accuracy": 1.0,
+    "span_f1_strict": 0.2168,
+    "span_f1_lenient": 0.5698,
+    "latency_p50_s": 2.076,
+    "latency_p95_s": 21.969
+  },
+  "error_analysis": [
+    {
+      "id": "test_182",
+      "input": "Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.",
+      "predicted": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"AZA\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.\", \"source_span\": {\"start_char\": 24, \"end_char\"",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"AZA\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.\", \"source_span\": {\"start_char\": 25, \"end_char\"",
+      "error_type": "hallucination"
+    },
+    {
+      "id": "test_183",
+      "input": "Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.",
+      "predicted": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"AZA\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.\", \"source_span\": {\"start_char\": 24, \"end_char\"",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"AZA\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Allergic side effects of AZA are rare, and reported allergic skin eruptions from AZA are very limited in Japan.\", \"source_span\": {\"start_char\": 25, \"end_char\"",
+      "error_type": "hallucination"
+    }
+  ],
+  "timestamp": "2026-05-29T12:34:00.018358Z"
+}

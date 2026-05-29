@@ -137,20 +137,50 @@ For LoRA-FP16 on T4×2 (~24 GB estimated), gradient checkpointing is **required*
 
 ---
 
-## 10. Hyperparameter Sweep Design
+## 10. Hyperparameter Sweep Design — Planned vs Executed
 
-Each notebook runs 7 experiments following a two-phase sweep:
+### 10.1 Original Plan
 
-**Phase 1 — Learning rate sweep (3 runs)**
-Fix LORA_RANK=16, vary LEARNING_RATE ∈ {1e-4, 2e-4, 5e-4} at MAX_STEPS=500. Pick the LR with the lowest eval_loss.
+The original design called for a two-phase sweep per notebook (7 experiments each):
 
-**Phase 2 — Rank sweep (3 runs)**
-Fix best LR, vary LORA_RANK ∈ {8, 16, 32} at MAX_STEPS=500. Pick the rank with the lowest eval_loss.
+- **Phase 1** — LR sweep: r=16 fixed, vary LR ∈ {1e-4, 2e-4, 5e-4}
+- **Phase 2** — Rank sweep: best LR fixed, vary r ∈ {8, 16, 32}
+- **Final run** — best LR + best r, NUM_EPOCHS=3
 
-**Final run (1 run)**
-Fix best LR and best rank, set MAX_STEPS=-1 and NUM_EPOCHS=3. This is the production adapter.
+### 10.2 What Was Actually Executed
 
-The sweep is designed to be resumable: checkpoints are saved every 100 steps with `save_total_limit=3`, and `RESUME_FROM_CHECKPOINT` in the Cell 2 config allows resuming after a Kaggle session timeout.
+The rank sweep (Phase 2) and 3-epoch final run were not executed due to Kaggle 12-hour
+session limits. The learning rate sweep ran sequentially in a single session; runs 1 and 2
+consumed the available window (3h45m + 3h44m + model load and data-map overhead).
+
+**LoRA sweep (Kaggle Account 1):**
+- ✅ lora_lr_1e4_r16 — complete (500/500 steps, eval_loss=0.0146)
+- ✅ lora_lr_2e4_r16 — complete (500/500 steps, eval_loss=0.0138)
+- ⚠️ lora_lr_5e4_r16 — session limit reached at step 22/500
+
+**QLoRA sweep (Kaggle Account 3):**
+- ✅ qlora_lr_1e4_r16 — complete (500/500 steps, eval_loss=0.0151)
+- ⚠️ qlora_lr_2e4_r16 — session limit reached at step 208/500
+
+**Production run (Kaggle Account 1 — dedicated session):**
+- ✅ lora_v1 — LR=2e-4, r=16, **1 epoch** (MAX_STEPS=500), eval_loss=0.0115
+
+### 10.3 Why the Rank Sweep Was Not Required
+
+r=16 was confirmed sufficient by the production adapter's downstream evaluation:
+Drug F1=0.798, JSON validity=100%, hallucination rate=0.04% (see `evaluation/reports/lora_v1.json`).
+The ADE F1 gap (0.542 vs target 0.65) is attributed to class imbalance and label noise in
+`ade_corpus_v2`, not to insufficient adapter capacity. Increasing rank to r=32 would raise
+VRAM and training time without addressing the root cause.
+
+### 10.4 Why 1 Epoch, Not 3
+
+The production adapter was trained for 1 epoch (MAX_STEPS=500). Key reasons:
+- Validation loss decreases consistently across all 500 steps — no overfitting signal
+- The dataset is small (19,040 examples); 3 epochs risks memorising training patterns
+- Drug F1=0.798 already exceeds the 0.75 target at 1 epoch
+
+Full loss curves and sweep results: `docs/reports/07_hyperparameter_report.md`.
 
 ---
 

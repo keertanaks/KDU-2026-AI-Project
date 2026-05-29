@@ -36,7 +36,7 @@ app = FastAPI(title="Harmony P3 Extractor", version="1.0")
 # Configurable via Space "Variables" tab — defaults assume the same HF account
 # owns both the adapter repo and this Space.
 BASE_MODEL = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
-ADAPTER_PATH = os.getenv("ADAPTER_PATH", "REPLACE_WITH_YOUR_USERNAME/ade-lora-adapter")
+ADAPTER_PATH = os.getenv("ADAPTER_PATH", "keer2004ks/ade-lora-adapter")
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
 
 # MUST stay byte-identical to app/ingestion/extractor.py::INSTRUCTION.
@@ -68,9 +68,24 @@ INSTRUCTION = (
 # ---------------------------------------------------------------------------
 
 
-def _load_model_and_tokenizer():
-    logger.info("Loading tokenizer from %s", ADAPTER_PATH)
-    tokenizer = AutoTokenizer.from_pretrained(ADAPTER_PATH, trust_remote_code=True)
+def _load_model_and_tokenizer(max_retries: int = 3):
+    import time
+    from huggingface_hub import snapshot_download
+
+    # Pre-download with retries so a dropped connection doesn't crash startup.
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info("Pre-fetching base model (attempt %d/%d)", attempt, max_retries)
+            snapshot_download(BASE_MODEL, ignore_patterns=["*.msgpack", "*.h5", "flax_*"])
+            break
+        except Exception as exc:
+            logger.warning("Download attempt %d failed: %s", attempt, exc)
+            if attempt == max_retries:
+                raise
+            time.sleep(10)
+
+    logger.info("Loading tokenizer from %s", BASE_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
@@ -93,12 +108,14 @@ def _load_model_and_tokenizer():
             trust_remote_code=True,
         )
     else:
-        # CPU fallback — slow but lets the free CPU tier work.
-        logger.info("Loading base model %s on CPU (float32)", BASE_MODEL)
+        # CPU fallback — float16 + low_cpu_mem_usage keeps peak RAM ~14 GB
+        # (loads weights one-at-a-time, avoids the 2x spike from float32).
+        logger.info("Loading base model %s on CPU (float16, low_cpu_mem_usage)", BASE_MODEL)
         base = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL,
-            torch_dtype=torch.float32,
+            torch_dtype=torch.float16,
             device_map=None,
+            low_cpu_mem_usage=True,
             trust_remote_code=True,
         )
 

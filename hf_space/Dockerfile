@@ -9,7 +9,8 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HF_HOME=/tmp/hf_cache \
-    TRANSFORMERS_CACHE=/tmp/hf_cache
+    TRANSFORMERS_CACHE=/tmp/hf_cache \
+    HF_HUB_ENABLE_HF_TRANSFER=1
 
 # System deps required by some wheels (bitsandbytes, sentencepiece protobuf compile)
 RUN apt-get update && apt-get install -y --no-install-recommends \

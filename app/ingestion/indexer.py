@@ -75,40 +75,6 @@ class Indexer:
                     "date": {"type": "date"},
                     "phi_spans": {"type": "text"},
                     "acl": {"type": "keyword"},
-                    # Project 3 — structured extraction fields. Populated by
-                    # app/ingestion/extractor.py before indexing. nested type lets
-                    # OpenSearch query each entity independently (e.g. filter docs
-                    # by mention + dosage on the SAME entity, not any-of-doc).
-                    "medications": {
-                        "type": "nested",
-                        "properties": {
-                            "mention": {"type": "keyword"},
-                            "dosage": {"type": "keyword"},
-                            "evidence": {"type": "text"},
-                            "start_char": {"type": "integer"},
-                            "end_char": {"type": "integer"},
-                        },
-                    },
-                    "adverse_events": {
-                        "type": "nested",
-                        "properties": {
-                            "mention": {"type": "keyword"},
-                            "linked_medication": {"type": "keyword"},
-                            "evidence": {"type": "text"},
-                            "start_char": {"type": "integer"},
-                            "end_char": {"type": "integer"},
-                        },
-                    },
-                    "relations": {
-                        "type": "nested",
-                        "properties": {
-                            "drug": {"type": "keyword"},
-                            "adverse_event": {"type": "keyword"},
-                            "status": {"type": "keyword"},
-                            "evidence": {"type": "text"},
-                        },
-                    },
-                    "extraction_model_version": {"type": "keyword"},
                 },
             },
         }

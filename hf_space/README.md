@@ -40,7 +40,7 @@ model locally. See `app/ingestion/extractor.py` in the Harmony repo.
 | Variable | Default | Purpose |
 |---|---|---|
 | `BASE_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | HF id of the base model |
-| `ADAPTER_PATH` | `<your-username>/ade-lora-adapter` | HF id of the LoRA adapter repo |
+| `ADAPTER_PATH` | `keer2004ks/ade-lora-adapter` | HF id of the LoRA adapter repo |
 | `MAX_NEW_TOKENS` | `512` | Generation length cap |
 
 ## Schema produced
