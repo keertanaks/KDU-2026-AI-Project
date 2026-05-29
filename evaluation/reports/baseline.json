@@ -1,0 +1,176 @@
+{
+  "model": "baseline",
+  "adapter_path": null,
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "base_model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "test_file": "/kaggle/input/datasets/keertanaks/harmony-ade-data/test.jsonl",
+  "n_examples": 2376,
+  "metrics": {
+    "json_valid_pre_repair": 0.0,
+    "json_valid_post_repair": 0.9932659932659933,
+    "schema_valid": 0.9932659932659933,
+    "drug_precision": 0.4077306733167082,
+    "drug_recall": 0.46382978723404256,
+    "drug_f1": 0.4339747843397478,
+    "ade_precision": 0.34971098265895956,
+    "ade_recall": 0.35745937961595275,
+    "ade_f1": 0.35354273192111035,
+    "relation_f1": 0.22715512338144972,
+    "relation_per_class": {
+      "related": 0.6779911373707533,
+      "not_related": 0.0,
+      "none": 0.0034742327735958305
+    },
+    "hallucination_rate": 0.006024096385542169,
+    "evidence_accuracy": 0.9464524765729585,
+    "enum_accuracy": 0.9932659932659933,
+    "span_f1_strict": 0.009370816599732263,
+    "span_f1_lenient": 0.07095046854082998,
+    "latency_p50_s": 1.9790830612182617,
+    "latency_p95_s": 18.755770325660706,
+    "n_entities_total": 1494
+  },
+  "error_analysis": [
+    {
+      "id": "baseline_91",
+      "input": "CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \"shining,\" glare, color vision anomalies, and gradually decreased vision.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"amiodarone HCl\",\n      \"dosage\": \"200 mg/day\",\n      \"linked_medication\": \"amiodarone HCl\",\n      \"evidence\": \"Soon after initiation of amiodarone HCl (200 mg/day)\",\n      \"source_span\": {\"start_char\": 25, \"end_char\": 43}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\":",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"amiodarone HCl\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \\\"shining,\\\" glare, color vision anomalies, and gradually decreased vision.\", \"source_span\": {\"start_char\": 38, \"end_char\": 52}",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_92",
+      "input": "CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \"shining,\" glare, color vision anomalies, and gradually decreased vision.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"amiodarone HCl\",\n      \"dosage\": \"200 mg/day\",\n      \"linked_medication\": \"amiodarone HCl\",\n      \"evidence\": \"Soon after initiation of amiodarone HCl (200 mg/day)\",\n      \"source_span\": {\"start_char\": 25, \"end_char\": 43}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\":",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"amiodarone HCl\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \\\"shining,\\\" glare, color vision anomalies, and gradually decreased vision.\", \"source_span\": {\"start_char\": 38, \"end_char\": 52}",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_93",
+      "input": "CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \"shining,\" glare, color vision anomalies, and gradually decreased vision.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"amiodarone HCl\",\n      \"dosage\": \"200 mg/day\",\n      \"linked_medication\": \"amiodarone HCl\",\n      \"evidence\": \"Soon after initiation of amiodarone HCl (200 mg/day)\",\n      \"source_span\": {\"start_char\": 25, \"end_char\": 43}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\":",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"amiodarone HCl\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \\\"shining,\\\" glare, color vision anomalies, and gradually decreased vision.\", \"source_span\": {\"start_char\": 38, \"end_char\": 52}",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_94",
+      "input": "CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \"shining,\" glare, color vision anomalies, and gradually decreased vision.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"amiodarone HCl\",\n      \"dosage\": \"200 mg/day\",\n      \"linked_medication\": \"amiodarone HCl\",\n      \"evidence\": \"Soon after initiation of amiodarone HCl (200 mg/day)\",\n      \"source_span\": {\"start_char\": 25, \"end_char\": 43}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\":",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"amiodarone HCl\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \\\"shining,\\\" glare, color vision anomalies, and gradually decreased vision.\", \"source_span\": {\"start_char\": 38, \"end_char\": 52}",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_95",
+      "input": "Infant twins sustained severe circumoral and pharyngeal burns from a concentrated solution of benzalkonium (Zephiran) chloride prescribed for treatment of candidiasis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"benzalkonium chloride\",\n      \"dosage\": null,\n      \"linked_medication\": \"Zephiran\",\n      \"evidence\": \"prescribed for treatment of candidiasis\",\n      \"source_span\": {\"start_char\": 49, \"end_char\": 68}\n    }\n  ],\n  \"relation_status\": \"related\"\n}\n```",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"benzalkonium\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Infant twins sustained severe circumoral and pharyngeal burns from a concentrated solution of benzalkonium (Zephiran) chloride prescribed for treatment of candidiasis.\", \"source_span\": {\"start_char\": 94, \"end_char\": 106}}, {\"entity_type\": \"adverse_e",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_96",
+      "input": "Infant twins sustained severe circumoral and pharyngeal burns from a concentrated solution of benzalkonium (Zephiran) chloride prescribed for treatment of candidiasis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"benzalkonium chloride\",\n      \"dosage\": null,\n      \"linked_medication\": \"Zephiran\",\n      \"evidence\": \"prescribed for treatment of candidiasis\",\n      \"source_span\": {\"start_char\": 49, \"end_char\": 68}\n    }\n  ],\n  \"relation_status\": \"related\"\n}\n```",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Zephiran\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Infant twins sustained severe circumoral and pharyngeal burns from a concentrated solution of benzalkonium (Zephiran) chloride prescribed for treatment of candidiasis.\", \"source_span\": {\"start_char\": 108, \"end_char\": 116}}, {\"entity_type\": \"adverse_even",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_365",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_366",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_367",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_368",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_369",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_370",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_371",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_372",
+      "input": "Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensitivity reactions - an anaphylactoid reaction known ",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"nephrotoxicity\",\n      \"dosage\": null,\n      \"linked_medication\": \"vancomycin\",\n      \"evidence\": \"but it is associated with many adverse effects such as nephrotoxicity\",\n      \"source_span\": {\"start_char\": 83, \"end_char\": 92}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"m",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"Vancomycin\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Vancomycin is widely used against methicillin-resistant Staphylococcus aureus infections, but it is associated with many adverse effects such as nephrotoxicity, ototoxicity, gastrointestinal disturbances, blood disorders, and two types of hypersensiti",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_409",
+      "input": "Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"Pneumonitis\",\n      \"dosage\": null,\n      \"linked_medication\": null,\n      \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine thera",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"sulfasalazine\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.\", \"source_span\"",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_410",
+      "input": "Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"Pneumonitis\",\n      \"dosage\": null,\n      \"linked_medication\": null,\n      \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine thera",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"sulfasalazine\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.\", \"source_span\"",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_411",
+      "input": "Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"Pneumonitis\",\n      \"dosage\": null,\n      \"linked_medication\": null,\n      \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine thera",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"sulfasalazine\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.\", \"source_span\"",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_412",
+      "input": "Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"Pneumonitis\",\n      \"dosage\": null,\n      \"linked_medication\": null,\n      \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine thera",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"sulfasalazine\", \"dosage\": null, \"linked_medication\": null, \"evidence\": \"Pneumonitis, bilateral pleural effusions, echocardiographic evidence of cardiac tamponade, and positive autoantibodies developed in a 43-year-old man, who was receiving long-term sulfasalazine therapy for chronic ulcerative colitis.\", \"source_span\"",
+      "error_reason": "schema_invalid"
+    },
+    {
+      "id": "baseline_680",
+      "input": "CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \"shining,\" glare, color vision anomalies, and gradually decreased vision.",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"medication\",\n      \"mention\": \"amiodarone HCl\",\n      \"dosage\": \"200 mg/day\",\n      \"linked_medication\": \"amiodarone HCl\",\n      \"evidence\": \"Soon after initiation of amiodarone HCl (200 mg/day)\",\n      \"source_span\": {\"start_char\": 25, \"end_char\": 43}\n    },\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\":",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [{\"entity_type\": \"medication\", \"mention\": \"amiodarone HCl\", \"dosage\": \"200 mg/day\", \"linked_medication\": null, \"evidence\": \"CASE REPORT: Soon after initiation of amiodarone HCl (200 mg/day), a 76-year-old man came to us with symptoms of visual \\\"shining,\\\" glare, color vision anomalies, and gradually decreased vision.\", \"source_span\": {\"start_char\": 38, \"end_ch",
+      "error_reason": null
+    },
+    {
+      "id": "baseline_1415",
+      "input": "Electrophysiologic data obtained before and during thyroxine replacement therapy showed that hypothyroidism lengthens the effective refractory period of the atria, AV node, bypass tract and His-Purkinje system (that in the ventricle not being measured); this lengthening resembles the effects of long",
+      "predicted": "```json\n{\n  \"schema_version\": \"v1\",\n  \"entities\": [\n    {\n      \"entity_type\": \"adverse_event\",\n      \"mention\": \"lengthening of the effective refractory period of the atria, AV node, bypass tract and His-Purkinje system\",\n      \"dosage\": null,\n      \"linked_medication\": \"amiodarone\",\n      \"evidence\": \"Electrophysiologic data obtained before and during thyroxine replacement therapy showed that hy",
+      "gold": "{\"schema_version\": \"v1\", \"entities\": [], \"relation_status\": \"not_related\"}",
+      "error_reason": null
+    }
+  ],
+  "timestamp": "2026-05-29T19:49:43.649223Z"
+}
