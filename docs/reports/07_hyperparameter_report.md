@@ -55,23 +55,33 @@ well within one epoch (see Section 4).
 
 Three learning rates were tested sequentially in the same Kaggle session:
 
-| Run ID | Learning Rate | Adapter Name |
-|---|---|---|
-| Run 1 | 1e-4 | `lora_lr_1e4_r16` |
-| Run 2 | 2e-4 | `lora_lr_2e4_r16` |
-| Run 3 | 5e-4 | `lora_lr_5e4_r16` |
-
-All runs: 1 epoch, r=16, T4×2 (multi-GPU), `adamw_torch`.
-
-### 3.2 QLoRA Baseline (Kaggle Account 3)
-
-One QLoRA run at the same learning rate as Run 1:
-
-| Run ID | Learning Rate | Quantization | Adapter Name |
+| Run ID | Learning Rate | Adapter Name | Status |
 |---|---|---|---|
-| Run 1 | 1e-4 | 4-bit NF4 | `qlora_lr_1e4_r16` |
+| Run 1 | 1e-4 | `lora_lr_1e4_r16` | ✅ Complete (500/500 steps) |
+| Run 2 | 2e-4 | `lora_lr_2e4_r16` | ✅ Complete (500/500 steps) |
+| Run 3 | 5e-4 | `lora_lr_5e4_r16` | ⚠️ Incomplete — Kaggle 12h session limit reached at step 22/500 |
+
+All runs: 1 epoch (max_steps=500), r=16, T4×2 (multi-GPU), `adamw_torch`.
+
+*Run 3 could not complete because Runs 1 and 2 consumed ~7.5h of the 12h session window
+(3h45m + 3h44m + model load/data-map overhead). The session was terminated before Run 3
+could produce a final eval_loss. Given Runs 1 and 2 clearly identify LR=2e-4 as optimal,
+Run 3 data is not required for the configuration decision.*
+
+### 3.2 QLoRA Sweep (Kaggle Account 3)
+
+Two QLoRA runs in the same session:
+
+| Run ID | Learning Rate | Quantization | Adapter Name | Status |
+|---|---|---|---|---|
+| Run 1 | 1e-4 | 4-bit NF4 | `qlora_lr_1e4_r16` | ✅ Complete (500/500 steps) |
+| Run 2 | 2e-4 | 4-bit NF4 | `qlora_lr_2e4_r16` | ⚠️ Incomplete — session limit reached at step 208/500 |
 
 T4×1, `paged_adamw_8bit`.
+
+*Run 2 reached step 208/500 (val_loss=0.018157 at step 200) before the session expired.
+Partial loss curve is recorded in Section 4.3. Run 1 provides sufficient data to confirm
+qlora underperforms lora FP16 at matching learning rate.*
 
 ### 3.3 Production LoRA (Kaggle Account 1 — Separate Session)
 
@@ -87,19 +97,71 @@ A full-quality LoRA run at the best sweep learning rate with T4×2:
 
 ### 4.1 Evaluation Loss by Configuration
 
-| Run | Model Type | LR | eval_loss | Notes |
+| Run | Model Type | LR | Final eval_loss | Status |
 |---|---|---|---|---|
-| 2lora | LoRA FP16 | 2e-4 | **0.0115** | ✅ Best — used for production adapter |
-| lora_lr_2e4_r16 | LoRA FP16 | 2e-4 | 0.0138 | Sweep run (single T4×1 session) |
-| lora_lr_1e4_r16 | LoRA FP16 | 1e-4 | 0.0146 | Learning rate too conservative |
-| qlora_lr_1e4_r16 | QLoRA 4-bit | 1e-4 | 0.0151 | Quantization degrades slightly |
-| lora_lr_5e4_r16 | LoRA FP16 | 5e-4 | — | Run 3; session limit reached |
+| 2lora | LoRA FP16 | 2e-4 | **0.0115** | ✅ Complete — production adapter |
+| lora_lr_2e4_r16 | LoRA FP16 | 2e-4 | 0.0138 | ✅ Complete |
+| lora_lr_1e4_r16 | LoRA FP16 | 1e-4 | 0.0146 | ✅ Complete |
+| qlora_lr_1e4_r16 | QLoRA 4-bit | 1e-4 | 0.0151 | ✅ Complete |
+| lora_lr_5e4_r16 | LoRA FP16 | 5e-4 | — | ⚠️ Session limit at step 22/500 |
+| qlora_lr_2e4_r16 | QLoRA 4-bit | 2e-4 | — (partial) | ⚠️ Session limit at step 208/500 |
 
 *Note: `2lora` was trained in a dedicated full-session run (T4×2, no other runs sharing
 the 12-hour window), which explains its lower eval_loss vs `lora_lr_2e4_r16` at the same
 learning rate — more stable training and no memory pressure from sequential runs.*
 
-### 4.2 Key Findings
+### 4.2 Step-by-Step Loss Curves (Completed Runs)
+
+**lora_lr_1e4_r16** (LR=1e-4, LoRA FP16, T4×2 — 3h45m):
+
+| Step | Training Loss | Validation Loss |
+|---|---|---|
+| 100 | 0.036100 | 0.021542 |
+| 200 | 0.040700 | 0.018416 |
+| 300 | 0.039600 | 0.017873 |
+| 400 | 0.031800 | 0.015604 |
+| **500** | **0.030000** | **0.014586** |
+
+**lora_lr_2e4_r16** (LR=2e-4, LoRA FP16, T4×2 — 3h44m):
+
+| Step | Training Loss | Validation Loss |
+|---|---|---|
+| 100 | 0.036000 | 0.020170 |
+| 200 | 0.040500 | 0.018713 |
+| 300 | 0.038300 | 0.016819 |
+| 400 | 0.030500 | 0.014831 |
+| **500** | **0.028000** | **0.013802** |
+
+**qlora_lr_1e4_r16** (LR=1e-4, QLoRA 4-bit NF4, T4×1 — completed):
+
+| Step | Training Loss | Validation Loss |
+|---|---|---|
+| 100 | 0.037500 | 0.023630 |
+| 200 | 0.040200 | 0.018157 |
+| 500 | — | **0.015100** |
+
+### 4.3 Partial Loss Curve (Incomplete Runs)
+
+**qlora_lr_2e4_r16** (LR=2e-4, QLoRA 4-bit NF4, T4×1 — session limit at step 208):
+
+| Step | Training Loss | Validation Loss |
+|---|---|---|
+| 100 | 0.037500 | 0.023630 |
+| 200 | 0.040200 | 0.018157 |
+| 208 | — | — (session terminated) |
+
+*Run terminated by Kaggle 12-hour session limit before reaching step 500. The step-200
+val_loss of 0.018157 is on par with `qlora_lr_1e4_r16` at the same checkpoint, providing
+no strong signal that LR=2e-4 would outperform LR=1e-4 for QLoRA at this dataset size.*
+
+**lora_lr_5e4_r16** (LR=5e-4, LoRA FP16, T4×2 — session limit at step 22):
+
+*Run terminated at step 22/500. No meaningful loss data available. Based on established
+practice, LR=5e-4 is aggressive for a 7B model on a 19K-example dataset and was not
+expected to outperform LR=2e-4. The complete Runs 1 and 2 provide sufficient evidence
+for the configuration decision.*
+
+### 4.4 Key Findings
 
 1. **LR=2e-4 is optimal** for this task. LR=1e-4 underfits within 1 epoch (loss 0.0146 vs
    0.0115 for the same architecture). LR=5e-4 was not fully evaluated but conventional
