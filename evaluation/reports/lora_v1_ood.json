@@ -1,0 +1,36 @@
+{
+  "model": "lora",
+  "adapter_path": "/kaggle/input/datasets/keertanaks/harmony-lora-adapter",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "base_model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "test_file": "/kaggle/input/datasets/keertanaks/harmony-ade-data/synthetic_ade_eval.jsonl",
+  "test_set": "synthetic_ood",
+  "n_examples": 60,
+  "metrics": {
+    "json_valid_pre_repair": 1.0,
+    "json_valid_post_repair": 1.0,
+    "schema_valid": 1.0,
+    "drug_precision": 1.0,
+    "drug_recall": 0.4696969696969697,
+    "drug_f1": 0.6391752577319588,
+    "ade_precision": 0.7741935483870968,
+    "ade_recall": 0.6,
+    "ade_f1": 0.676056338028169,
+    "relation_f1": 0.5993265993265994,
+    "relation_per_class": {
+      "related": 0.909090909090909,
+      "not_related": 0.888888888888889,
+      "none": 0.0
+    },
+    "hallucination_rate": 0.0,
+    "evidence_accuracy": 1.0,
+    "enum_accuracy": 1.0,
+    "span_f1_strict": 0.3870967741935484,
+    "span_f1_lenient": 0.8064516129032258,
+    "latency_p50_s": 16.886097073554993,
+    "latency_p95_s": 19.96409227848053,
+    "n_entities_total": 62
+  },
+  "error_analysis": [],
+  "timestamp": "2026-05-29T20:01:25.155031Z"
+}
