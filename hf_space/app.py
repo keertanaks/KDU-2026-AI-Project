@@ -138,26 +138,17 @@ def extract(req: ExtractRequest):
 # ---------------------------------------------------------------------------
 
 EXAMPLES = [
-    ["The patient developed severe rash after taking amoxicillin 500mg."],
+    ["The patient developed severe hepatotoxicity after 3 months of isoniazid therapy."],
     ["Warfarin therapy was initiated; patient subsequently reported GI bleeding episodes."],
-    ["Patient was prescribed metformin 500mg BID for type 2 diabetes management."],
+    ["Methotrexate 15mg weekly was initiated; the patient developed oral mucositis and elevated liver enzymes."],
     ["Ibuprofen 400mg was prescribed. Two days later the patient developed acute renal failure."],
+    ["Patient was prescribed metformin 500mg BID for type 2 diabetes. No adverse events noted."],
 ]
-
-DESCRIPTION = """
-**Harmony Clinical Structuring** — LoRA fine-tuned Qwen2.5-7B-Instruct on [ade_corpus_v2](https://huggingface.co/datasets/ade-benchmark-corpus/ade_corpus_v2).
-
-Enter a clinical sentence and the model will extract medications and adverse events as structured JSON.
-
-> ⚠️ **Inference runs on CPU — please allow 30–60 seconds per query.**
-
-The same model powers the [Harmony Healthcare RAG](https://github.com/keertanaks/KDU-2026-AI-Project) ingestion pipeline.
-"""
 
 
 def gradio_predict(text: str) -> str:
     if not text or not text.strip():
-        return "Please enter some clinical text."
+        return json.dumps({"error": "Please enter some clinical text."}, indent=2)
     try:
         resp = extract(ExtractRequest(text=text, record_id="gradio_demo"))
         raw = resp.raw_output
@@ -171,20 +162,75 @@ def gradio_predict(text: str) -> str:
         return raw
 
 
-demo = gr.Interface(
-    fn=gradio_predict,
-    inputs=gr.Textbox(
-        lines=5,
-        placeholder="e.g. The patient developed severe rash after taking amoxicillin 500mg.",
-        label="Clinical Text",
+with gr.Blocks(
+    theme=gr.themes.Soft(
+        primary_hue="indigo",
+        secondary_hue="blue",
+        font=[gr.themes.GoogleFont("Inter"), "sans-serif"],
     ),
-    outputs=gr.Code(language="json", label="Structured Extraction Result"),
-    title="Harmony Clinical Structuring — LoRA Fine-tuned Qwen2.5-7B",
-    description=DESCRIPTION,
-    examples=EXAMPLES,
-    cache_examples=False,
-    theme=gr.themes.Soft(),
-)
+    title="Harmony Clinical Structuring",
+) as demo:
+    gr.Markdown(
+        """
+# Harmony Clinical Structuring
+### LoRA Fine-tuned Qwen2.5-7B-Instruct · Clinical Drug & ADE Extraction
+
+Fine-tuned on [ade_corpus_v2](https://huggingface.co/datasets/ade-benchmark-corpus/ade_corpus_v2)
+· Powers the [Harmony Healthcare RAG](https://github.com/keertanaks/KDU-2026-AI-Project) ingestion pipeline
+· Schema v1 · Drug F1 = 0.798
+        """
+    )
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("### Input")
+            text_input = gr.Textbox(
+                lines=6,
+                placeholder="Enter a clinical sentence, e.g.:\n\nThe patient developed severe rash after taking amoxicillin 500mg.",
+                label="Clinical Text",
+                show_label=False,
+            )
+            with gr.Row():
+                clear_btn = gr.Button("Clear", variant="secondary")
+                submit_btn = gr.Button("Extract", variant="primary", scale=2)
+
+            gr.Markdown(
+                """
+**What the model extracts:**
+- 💊 Medications with dosage and character spans
+- ⚠️ Adverse events linked to their causative drug
+- 🔗 Relation status (related / not_related / none)
+
+> CPU inference — response takes **1–3 minutes**.
+> One request at a time.
+                """
+            )
+
+        with gr.Column(scale=1):
+            gr.Markdown("### Extraction Result")
+            json_output = gr.Code(
+                language="json",
+                label="Structured Output",
+                show_label=False,
+                lines=20,
+            )
+
+    gr.Markdown("### Try an example")
+    gr.Examples(
+        examples=EXAMPLES,
+        inputs=text_input,
+        label="",
+    )
+
+    submit_btn.click(fn=gradio_predict, inputs=text_input, outputs=json_output)
+    clear_btn.click(fn=lambda: ("", ""), outputs=[text_input, json_output])
+
+    gr.Markdown(
+        """
+---
+**Model:** Qwen2.5-7B-Instruct + LoRA adapter (r=16, alpha=32, FP16) · **Training data:** 19,020 examples from ade_corpus_v2 · **Eval:** Drug F1 0.798 · ADE F1 0.542 · Hallucination rate 0.04%
+        """
+    )
 
 # Mount Gradio at root — FastAPI API routes (/extract, /health) are unaffected.
 app = gr.mount_gradio_app(app, demo, path="/")
