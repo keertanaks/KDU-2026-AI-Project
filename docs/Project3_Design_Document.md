@@ -834,6 +834,37 @@ Guarantees EVAL-02 = 100% and EVAL-03 ≥ 99% at the cost of ~10–20% slower ge
 - **Steady-state cost:** ~1.5s per chunk on T4-class GPU, ~5–8s on CPU.
 - **Env vars:** `EXTRACTION_ADAPTER_PATH`, `EXTRACTION_BASE_MODEL`, `EXTRACTION_CONSTRAINED`, `EXTRACTION_DEVICE` (cuda / cpu / auto).
 
+### 16.4 HuggingFace Space — Remote Inference & Demo UI
+
+To avoid loading the 7B model on the same host as the Harmony API server, the
+production deployment uses a **remote inference mode**: `EXTRACTION_REMOTE_URL`
+points to a HuggingFace Space that runs the model independently.
+
+**Space:** `keer2004ks/harmony-extractor` (public, free CPU tier)
+**Stack:** `llama-cpp-python` + GGUF Q8_0 quantisation (~8 GB) — fits within
+the 16 GB RAM limit of a free HF Space CPU instance.
+**Model files** (stored in `keer2004ks/ade-lora-adapter`):
+- `base-q8.gguf` — Qwen2.5-7B-Instruct base, Q8_0 quantised
+- `adapter.gguf` — LoRA v1 adapter converted to GGUF via `convert_lora_to_gguf.py`
+
+**Endpoints exposed by the Space:**
+
+| Endpoint | Used by |
+|---|---|
+| `POST /extract` | `ClinicalExtractor._generate_remote()` in the Harmony ingestion pipeline |
+| `GET /health` | uptime monitoring / smoke tests |
+| `GET /` | Gradio demo UI (browser) |
+
+**Gradio demo UI** (`hf_space/app.py`, mounted at `/`):
+A `gr.Interface` is mounted on top of the FastAPI app using
+`gr.mount_gradio_app(app, demo, path="/")`. The `gradio_predict()` function
+calls `extract()` directly (same process, no extra HTTP hop) so there is no
+second model load. The UI is intended for manual testing and project
+demonstration — it is not in the ingestion pipeline critical path.
+
+**Inference latency on free CPU:** ~30–60 s per query (Q8_0, 2 threads).
+The Harmony pipeline sets `EXTRACTION_REMOTE_TIMEOUT=300` to accommodate this.
+
 ---
 
 ## 17. Harmony Integration
