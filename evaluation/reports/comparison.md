@@ -28,7 +28,9 @@
 | Latency p50 (s) | — | 2.076 | — | — |
 | Latency p95 (s) | — | 21.969 | — | — |
 
-*QLoRA v1 and Baseline columns will be populated when those evaluation runs complete.*
+**Note on QLoRA v1:** The QLoRA full training run was not completed due to Kaggle 12-hour session limits. One sweep run (`qlora_lr_1e4_r16`) completed 500/500 steps (eval_loss=0.0151) confirming the training pipeline works, but the production adapter was not saved and evaluated on the full test set. The `—` entries above reflect this. See `docs/reports/06_finetuning_method_report.md` §7 for full session log. The LoRA v1 adapter is the primary submission artifact.
+
+**Note on Baseline:** Baseline (zero-shot Qwen2.5-7B-Instruct with no fine-tuning) results are reported in `evaluation/reports/latest.json`: Drug F1=0.434, ADE F1=0.354, JSON pre-repair=0.0%, hallucination=0.6%. Fine-tuning improved Drug F1 by +83% and eliminated pre-repair JSON failures entirely.
 
 ---
 
