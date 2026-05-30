@@ -9,6 +9,7 @@
 import json
 import logging
 import os
+import threading
 
 import gradio as gr
 import uvicorn
@@ -78,6 +79,7 @@ def _load_model() -> Llama:
 
 
 LLM: Llama = _load_model()
+_LLM_LOCK = threading.Lock()  # llama-cpp-python is not thread-safe
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +115,13 @@ def extract(req: ExtractRequest):
     ]
 
     try:
-        response = LLM.create_chat_completion(
-            messages=messages,
-            max_tokens=MAX_TOKENS,
-            temperature=0.0,
-            repeat_penalty=1.05,
-        )
+        with _LLM_LOCK:
+            response = LLM.create_chat_completion(
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                temperature=0.0,
+                repeat_penalty=1.05,
+            )
     except Exception as exc:
         logger.error("Inference failed for record %s: %s", req.record_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"inference_failed: {exc}")
