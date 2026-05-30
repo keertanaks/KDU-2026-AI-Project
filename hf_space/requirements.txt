@@ -1,12 +1,6 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 pydantic==2.10.3
-torch==2.4.1
-transformers==4.46.3
-peft==0.18.1
-accelerate==1.1.1
-bitsandbytes==0.44.1
 huggingface_hub==0.26.5
 hf-transfer==0.1.8
-sentencepiece==0.2.0
-protobuf==5.28.3
+llama-cpp-python==0.3.4
