@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: apache-2.0
-short_description: Fine-tuned Qwen2.5-7B + LoRA for clinical drug/ADE extraction
+short_description: LoRA fine-tuned Qwen2.5-7B for drug/ADE extraction
 ---
 
 # Harmony Project 3 — Clinical Extractor (HF Space)
