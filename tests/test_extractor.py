@@ -176,8 +176,13 @@ def test_extract_returns_empty_result_on_oom():
     assert result.validation.json_valid is False
 
 
-def test_extract_returns_empty_result_when_model_load_fails():
-    """If _ensure_loaded raises (missing adapter, bad path, no torch), degrade gracefully."""
+def test_extract_returns_empty_result_when_model_load_fails(monkeypatch):
+    """If _ensure_loaded raises (missing adapter, bad path, no torch), degrade gracefully.
+
+    Must run in LOCAL mode (no EXTRACTION_REMOTE_URL) so the _ensure_loaded code
+    path is reached. In remote mode the extractor skips _ensure_loaded entirely.
+    """
+    monkeypatch.delenv("EXTRACTION_REMOTE_URL", raising=False)
     ext = ClinicalExtractor()  # no model/tokenizer injected
 
     with patch.object(
@@ -215,6 +220,8 @@ def test_get_returns_same_instance_across_calls():
 def test_adapter_version_when_enabled(monkeypatch):
     monkeypatch.setenv("EXTRACTION_ENABLED", "true")
     monkeypatch.setenv("EXTRACTION_ADAPTER_PATH", "models/adapters/lora_v1")
+    # Must run in LOCAL mode — remote mode prefixes with "remote:" (tested separately)
+    monkeypatch.delenv("EXTRACTION_REMOTE_URL", raising=False)
     ext = ClinicalExtractor()
     assert ext.adapter_version() == "lora_v1"
 
