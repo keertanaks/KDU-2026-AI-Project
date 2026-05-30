@@ -10,6 +10,7 @@ import json
 import logging
 import os
 
+import gradio as gr
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from huggingface_hub import hf_hub_download
@@ -125,6 +126,65 @@ def extract(req: ExtractRequest):
     raw = response["choices"][0]["message"]["content"].strip()
     logger.info("record_id=%s output_len=%d", req.record_id, len(raw))
     return ExtractResponse(raw_output=raw)
+
+
+# ---------------------------------------------------------------------------
+# Gradio demo UI — mounted at "/" so the Space has a visible interface.
+# The /extract and /health FastAPI routes are still reachable by the
+# Harmony ingestion pipeline at their original paths.
+# ---------------------------------------------------------------------------
+
+EXAMPLES = [
+    ["The patient developed severe rash after taking amoxicillin 500mg."],
+    ["Warfarin therapy was initiated; patient subsequently reported GI bleeding episodes."],
+    ["Patient was prescribed metformin 500mg BID for type 2 diabetes management."],
+    ["Ibuprofen 400mg was prescribed. Two days later the patient developed acute renal failure."],
+]
+
+DESCRIPTION = """
+**Harmony Clinical Structuring** — LoRA fine-tuned Qwen2.5-7B-Instruct on [ade_corpus_v2](https://huggingface.co/datasets/ade-benchmark-corpus/ade_corpus_v2).
+
+Enter a clinical sentence and the model will extract medications and adverse events as structured JSON.
+
+> ⚠️ **Inference runs on CPU — please allow 30–60 seconds per query.**
+
+The same model powers the [Harmony Healthcare RAG](https://github.com/keertanaks/KDU-2026-AI-Project) ingestion pipeline.
+"""
+
+
+def gradio_predict(text: str) -> str:
+    if not text or not text.strip():
+        return "Please enter some clinical text."
+    try:
+        resp = extract(ExtractRequest(text=text, record_id="gradio_demo"))
+        raw = resp.raw_output
+    except HTTPException as exc:
+        return json.dumps({"error": exc.detail}, indent=2)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)}, indent=2)
+    try:
+        return json.dumps(json.loads(raw), indent=2)
+    except Exception:
+        return raw
+
+
+demo = gr.Interface(
+    fn=gradio_predict,
+    inputs=gr.Textbox(
+        lines=5,
+        placeholder="e.g. The patient developed severe rash after taking amoxicillin 500mg.",
+        label="Clinical Text",
+    ),
+    outputs=gr.Code(language="json", label="Structured Extraction Result"),
+    title="Harmony Clinical Structuring — LoRA Fine-tuned Qwen2.5-7B",
+    description=DESCRIPTION,
+    examples=EXAMPLES,
+    cache_examples=False,
+    theme=gr.themes.Soft(),
+)
+
+# Mount Gradio at root — FastAPI API routes (/extract, /health) are unaffected.
+app = gr.mount_gradio_app(app, demo, path="/")
 
 
 if __name__ == "__main__":
