@@ -151,7 +151,7 @@ Every decision below was made before any code was written, with alternatives con
 | D-30 | Synthetic OOD Eval | 50–100 hand-crafted clinical-style sentences via Claude/GPT-4, committed as `evaluation/synthetic_ade_eval.jsonl`, never seen in training | Tests generalization beyond PubMed case-report style. Cheap, high signal. |
 | D-31 | Baseline Comparison | Three-way: (a) zero-shot Qwen2.5-7B-Instruct, (b) LoRA fine-tuned, (c) QLoRA fine-tuned — all evaluated on the same test set and OOD set | Proves fine-tuning improves over the base model. Required for the "original vs fine-tuned" comparison report. |
 | D-32 | Bonus Items | P2 (constrained decoding), P5 (OpenSearch enrichment + before/after retrieval), P7 (error-analysis dashboard). Skip P1 (FFT — infeasible), P3 (active learning — too much scope), P4 (full LLM query rewriter — replaced by lightweight regex). P6 (schema ablation) is optional. | High ROI, low effort. P2 directly improves EVAL-02 and EVAL-03. P5 proves workflow impact. P7 is the error story for the final report. |
-| D-33 | Branch Strategy | One umbrella branch `feature/p3-fine-tuning` off main. Feature sub-branches (`p3-data-prep`, `p3-schema`, `p3-lora`, `p3-qlora`, `p3-evaluation`, `p3-integration`, `p3-demo`) each PR into the umbrella branch incrementally. Final single PR `feature/p3-fine-tuning → main`. | Incremental review (lead can comment on each piece) + clean single PR at the end (lead-requested). |
+| D-33 | Branch Strategy | One umbrella branch `feature/p3-fine-tuning` off main. Feature sub-branches (`p3-data-prep`, `p3-schema`, `p3-lora`, `p3-qlora`, `p3-evaluation`, `p3-integration`, `p3-final`) each PR into the umbrella branch incrementally. Final single PR `feature/p3-fine-tuning → main`. | Incremental review (lead can comment on each piece) + clean single PR at the end (lead-requested). |
 | D-34 | Schema Version | `schema_version: "v1"` embedded in every extraction output and in adapter config | Forward-compatibility. Future schema changes increment to v2 without invalidating v1 extractions. |
 | D-35 | Extraction Order vs PHI Masking | Run extraction on **original text before PHI masking**. After extraction, apply Presidio to the `mention` and `evidence` fields in the extraction output to strip any PHI that leaked in. | PHI masking shifts character offsets — running extraction after masking makes all `source_span` values wrong relative to the original document. Drug names and ADE mentions are NOT PHI (they are clinical findings, not identity information), so running extraction on unmasked text is safe. The final stored extraction fields are then PHI-checked before indexing. |
 
@@ -833,6 +833,37 @@ Guarantees EVAL-02 = 100% and EVAL-03 ≥ 99% at the cost of ~10–20% slower ge
 - **First call cost:** ~10s model load (CPU) or ~3s (GPU).
 - **Steady-state cost:** ~1.5s per chunk on T4-class GPU, ~5–8s on CPU.
 - **Env vars:** `EXTRACTION_ADAPTER_PATH`, `EXTRACTION_BASE_MODEL`, `EXTRACTION_CONSTRAINED`, `EXTRACTION_DEVICE` (cuda / cpu / auto).
+
+### 16.4 HuggingFace Space — Remote Inference & Demo UI
+
+To avoid loading the 7B model on the same host as the Harmony API server, the
+production deployment uses a **remote inference mode**: `EXTRACTION_REMOTE_URL`
+points to a HuggingFace Space that runs the model independently.
+
+**Space:** `keer2004ks/harmony-extractor` (public, free CPU tier)
+**Stack:** `llama-cpp-python` + GGUF Q8_0 quantisation (~8 GB) — fits within
+the 16 GB RAM limit of a free HF Space CPU instance.
+**Model files** (stored in `keer2004ks/ade-lora-adapter`):
+- `base-q8.gguf` — Qwen2.5-7B-Instruct base, Q8_0 quantised
+- `adapter.gguf` — LoRA v1 adapter converted to GGUF via `convert_lora_to_gguf.py`
+
+**Endpoints exposed by the Space:**
+
+| Endpoint | Used by |
+|---|---|
+| `POST /extract` | `ClinicalExtractor._generate_remote()` in the Harmony ingestion pipeline |
+| `GET /health` | uptime monitoring / smoke tests |
+| `GET /` | Gradio demo UI (browser) |
+
+**Gradio demo UI** (`hf_space/app.py`, mounted at `/`):
+A `gr.Interface` is mounted on top of the FastAPI app using
+`gr.mount_gradio_app(app, demo, path="/")`. The `gradio_predict()` function
+calls `extract()` directly (same process, no extra HTTP hop) so there is no
+second model load. The UI is intended for manual testing and project
+demonstration — it is not in the ingestion pipeline critical path.
+
+**Inference latency on free CPU:** ~30–60 s per query (Q8_0, 2 threads).
+The Harmony pipeline sets `EXTRACTION_REMOTE_TIMEOUT=300` to accommodate this.
 
 ---
 

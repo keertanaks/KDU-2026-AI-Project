@@ -13,7 +13,7 @@ main
         ├── Phase 4: feature/p3-qlora-training
         ├── Phase 5: feature/p3-evaluation
         ├── Phase 6: feature/p3-harmony-integration
-        └── Phase 7: feature/p3-demo
+        └── Phase 7: feature/p3-final
 ```
 
 **Dependency order:**
@@ -767,7 +767,7 @@ Create PR: feature/p3-harmony-integration → feature/p3-fine-tuning
 
 ## Phase 7: Demo and Bonus Items
 
-**Branch:** `feature/p3-demo`
+**Branch:** `feature/p3-final`
 **PRs into:** `feature/p3-fine-tuning`
 **Depends on:** All previous phases
 
@@ -800,7 +800,7 @@ Task: Create the demo, error dashboard, and remaining report documents for Proje
 
 Create the branch:
 git checkout feature/p3-fine-tuning
-git checkout -b feature/p3-demo
+git checkout -b feature/p3-final
 
 Create the following files:
 
@@ -874,8 +874,8 @@ Final Report deliverable. Include these sections:
 13. Recommendations (which adapter to use in production and why, what would improve results in v2)
 14. Bonus Items Delivered (P2, P5, P7 — what was built and what it showed)
 
-Commit and push feature/p3-demo.
-Create PR: feature/p3-demo → feature/p3-fine-tuning
+Commit and push feature/p3-final.
+Create PR: feature/p3-final → feature/p3-fine-tuning
 ```
 
 ---

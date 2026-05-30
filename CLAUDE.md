@@ -84,7 +84,7 @@ main
         ├── feature/p3-qlora-training  ← Phase 4
         ├── feature/p3-evaluation      ← Phase 5
         ├── feature/p3-harmony-integration ← Phase 6
-        └── feature/p3-demo            ← Phase 7
+        └── feature/p3-final           ← Phase 7
 ```
 
 Each sub-branch PRs into `feature/p3-fine-tuning`, not into `main`.
